@@ -60,8 +60,7 @@ fun SetupScreen(
 
         Text(
             text =
-                "Scan & info aplikasi\n" +
-                "Disable & hapus aplikasi\n" +
+                "SMembutuhkan Shizuku\n" +
                 "Membutuhkan akses ADB",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
