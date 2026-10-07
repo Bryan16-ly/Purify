@@ -41,6 +41,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -63,8 +64,11 @@ import rikka.shizuku.Shizuku
 fun AppListScreen(
     apps: List<AppInfo>,
     accessMethod: AccessMethod,
+    darkTheme: Boolean,
+    onThemeChanged: (Boolean) -> Unit,
     onAppDisabled: (String) -> Unit,
     onAppUninstalled: (String) -> Unit,
+    onAppRestored: () -> Unit,
     onSettingsClick: () -> Unit
 ) {
 
@@ -613,10 +617,6 @@ fun AppListScreen(
                                 .bodyMedium
                     )
                 }
-
-                /*
-                 * TIDAK ADA SEARCH DI SINI.
-                 */
             }
 
             /*
@@ -742,10 +742,6 @@ fun AppListScreen(
                                 .bodyMedium
                     )
                 }
-
-                /*
-                 * SEARCH HANYA DI HALAMAN UTAMA
-                 */
 
                 IconButton(
 
@@ -957,8 +953,6 @@ fun AppListScreen(
          * ==========================================
          * SEARCH RESULT
          * ==========================================
-         *
-         * Hanya tampil pada Applications.
          */
 
         if (
@@ -1075,8 +1069,6 @@ fun AppListScreen(
              * ==================================
              * DELETED APPS
              * ==================================
-             *
-             * Hanya muncul pada halaman Disabled.
              */
 
             if (
@@ -1192,17 +1184,6 @@ fun AppListScreen(
 
                                     selectedPackages =
                                         emptySet()
-
-                                    /*
-                                     * Karena callback bulk hanya
-                                     * memberikan jumlah berhasil/gagal,
-                                     * state UI diperbarui kalau
-                                     * semuanya berhasil.
-                                     *
-                                     * Kalau ada kegagalan sebagian,
-                                     * cache tidak boleh menganggap
-                                     * semuanya berhasil.
-                                     */
 
                                     if (
                                         successCount ==
@@ -1380,9 +1361,6 @@ fun AppListScreen(
 
                             detectTapGestures(
                                 onTap = {
-                                    /*
-                                     * Konsumsi touch.
-                                     */
                                 }
                             )
                         }
@@ -1414,10 +1392,8 @@ fun AppListScreen(
                     ) {
 
                         Text(
-
                             text =
                                 app.appName,
-
                             style =
                                 MaterialTheme
                                     .typography
@@ -1432,19 +1408,14 @@ fun AppListScreen(
                         )
 
                         Text(
-
                             text =
                                 if (
                                     app.isEnabled
                                 ) {
-
                                     "AKTIF"
-
                                 } else {
-
                                     "DISABLED"
                                 },
-
                             style =
                                 MaterialTheme
                                     .typography
@@ -1502,10 +1473,8 @@ fun AppListScreen(
                         )
 
                         Text(
-
                             text =
                                 "Storage",
-
                             style =
                                 MaterialTheme
                                     .typography
@@ -1575,10 +1544,8 @@ fun AppListScreen(
                             )
 
                             Text(
-
                                 text =
                                     "APK Path",
-
                                 style =
                                     MaterialTheme
                                         .typography
@@ -1586,10 +1553,8 @@ fun AppListScreen(
                             )
 
                             Text(
-
                                 text =
                                     app.apkPath,
-
                                 style =
                                     MaterialTheme
                                         .typography
@@ -1605,10 +1570,8 @@ fun AppListScreen(
                         )
 
                         Text(
-
                             text =
                                 "Permissions",
-
                             style =
                                 MaterialTheme
                                     .typography
@@ -1628,10 +1591,8 @@ fun AppListScreen(
                         ) {
 
                             Text(
-
                                 text =
                                     "No requested permissions",
-
                                 style =
                                     MaterialTheme
                                         .typography
@@ -1676,14 +1637,12 @@ fun AppListScreen(
                                             }
 
                                         Text(
-
                                             text =
                                                 "$symbol " +
                                                     permission
                                                         .substringAfterLast(
                                                             '.'
                                                         ),
-
                                             style =
                                                 MaterialTheme
                                                     .typography
@@ -1701,12 +1660,6 @@ fun AppListScreen(
                                 )
                         )
 
-                        /*
-                         * ==================================
-                         * ACTION BUTTON
-                         * ==================================
-                         */
-
                         Row(
 
                             modifier =
@@ -1715,12 +1668,6 @@ fun AppListScreen(
                             horizontalArrangement =
                                 Arrangement.End
                         ) {
-
-                            /*
-                             * ==================================
-                             * ENABLE
-                             * ==================================
-                             */
 
                             if (
                                 !app.isEnabled
@@ -1749,11 +1696,6 @@ fun AppListScreen(
 
                                                 selectedApp =
                                                     null
-
-                                                /*
-                                                 * Update cache
-                                                 * tanpa scan.
-                                                 */
 
                                                 val updatedApps =
                                                     apps.map {
@@ -1788,11 +1730,6 @@ fun AppListScreen(
                                                             updatedApps
                                                     )
 
-                                                /*
-                                                 * Refresh display
-                                                 * dari cache.
-                                                 */
-
                                                 displayApps =
                                                     AppListStorage
                                                         .loadDisplayApps(
@@ -1816,12 +1753,6 @@ fun AppListScreen(
                                         )
                                 )
                             }
-
-                            /*
-                             * ==================================
-                             * HAPUS
-                             * ==================================
-                             */
 
                             Button(
 
@@ -1852,15 +1783,6 @@ fun AppListScreen(
                                                     app.packageName
                                                 )
 
-                                                /*
-                                                 * PackageManagerAction
-                                                 * sudah menyimpan aplikasi
-                                                 * ke DeletedAppStorage.
-                                                 *
-                                                 * Kita hanya reload daftar
-                                                 * display tanpa scan.
-                                                 */
-
                                                 displayApps =
                                                     AppListStorage
                                                         .loadDisplayApps(
@@ -1879,12 +1801,6 @@ fun AppListScreen(
                         }
                     }
                 }
-
-                /*
-                 * ==================================
-                 * CLOSE BUTTON
-                 * ==================================
-                 */
 
                 Button(
 
@@ -1972,10 +1888,8 @@ fun AppListScreen(
                 ) {
 
                     Text(
-
                         text =
                             app.appName,
-
                         style =
                             MaterialTheme
                                 .typography
@@ -1990,10 +1904,8 @@ fun AppListScreen(
                     )
 
                     Text(
-
                         text =
                             "DELETED",
-
                         style =
                             MaterialTheme
                                 .typography
@@ -2046,11 +1958,9 @@ fun AppListScreen(
                     )
 
                     Text(
-
                         text =
                             "Aplikasi ini sudah dihapus " +
                                 "untuk user 0.",
-
                         style =
                             MaterialTheme
                                 .typography
@@ -2068,20 +1978,61 @@ fun AppListScreen(
 
                         modifier =
                             Modifier.fillMaxWidth(),
-
+                    
                         horizontalArrangement =
                             Arrangement.End
                     ) {
-
+                    
                         Button(
-
+                    
                             onClick = {
-
+                    
+                                PackageManagerAction.restore(
+                    
+                                    context =
+                                        context,
+                    
+                                    app =
+                                        app,
+                    
+                                    accessMethod =
+                                        accessMethod
+                    
+                                ) { success ->
+                    
+                                    if (success) {
+                    
+                                        selectedDeletedApp =
+                                            null
+                    
+                                        onAppRestored()
+                                    }
+                                }
+                            }
+                        ) {
+                    
+                            Text(
+                                text =
+                                    "Restore"
+                            )
+                        }
+                    
+                        Spacer(
+                            modifier =
+                                Modifier.width(
+                                    8.dp
+                                )
+                        )
+                    
+                        Button(
+                    
+                            onClick = {
+                    
                                 selectedDeletedApp =
                                     null
                             }
                         ) {
-
+                    
                             Text(
                                 text =
                                     "Tutup"
@@ -2097,6 +2048,9 @@ fun AppListScreen(
      * ==========================================
      * SETTINGS DIALOG
      * ==========================================
+     *
+     * Sekarang Settings juga mempunyai
+     * pengaturan tema.
      */
 
     if (
@@ -2121,12 +2075,120 @@ fun AppListScreen(
 
             text = {
 
-                Text(
+                Column {
 
-                    text =
-                        "Metode akses saat ini: " +
-                            accessMethod.name
-                )
+                    Text(
+                        text =
+                            "Metode akses saat ini: " +
+                                accessMethod.name
+                    )
+
+                    Spacer(
+                        modifier =
+                            Modifier.height(
+                                20.dp
+                            )
+                    )
+
+                    Row(
+
+                        modifier =
+                            Modifier.fillMaxWidth(),
+
+                        verticalAlignment =
+                            Alignment.CenterVertically,
+
+                        horizontalArrangement =
+                            Arrangement.SpaceBetween
+                    ) {
+
+                        Column(
+                            modifier =
+                                Modifier.weight(1f)
+                        ) {
+
+                            Text(
+                                text =
+                                    "Tema gelap",
+
+                                style =
+                                    MaterialTheme
+                                        .typography
+                                        .titleMedium
+                            )
+
+                            Spacer(
+                                modifier =
+                                    Modifier.height(
+                                        2.dp
+                                    )
+                            )
+
+                            Text(
+                                text =
+                                    if (
+                                        darkTheme
+                                    ) {
+                                        "Aktif"
+                                    } else {
+                                        "Nonaktif"
+                                    },
+
+                                style =
+                                    MaterialTheme
+                                        .typography
+                                        .bodySmall,
+
+                                color =
+                                    MaterialTheme
+                                        .colorScheme
+                                        .onSurfaceVariant
+                            )
+                        }
+
+                        Switch(
+
+                            checked =
+                                darkTheme,
+
+                            onCheckedChange = { enabled ->
+
+                                /*
+                                 * Kirim perubahan ke
+                                 * MainActivity.
+                                 */
+
+                                onThemeChanged(
+                                    enabled
+                                )
+
+                                /*
+                                 * Beri feedback langsung
+                                 * kepada user.
+                                 */
+
+                                Toast.makeText(
+
+                                    context,
+
+                                    if (
+                                        enabled
+                                    ) {
+
+                                        "Tema gelap diaktifkan"
+
+                                    } else {
+
+                                        "Tema terang diaktifkan"
+                                    },
+
+                                    Toast.LENGTH_SHORT
+
+                                ).show()
+                            }
+                        )
+                    }
+                }
             },
 
             confirmButton = {
@@ -2175,12 +2237,6 @@ fun AppListScreen(
  * ==========================================
  * ENABLE PACKAGE
  * ==========================================
- *
- * Menjalankan:
- *
- * pm enable --user 0 PACKAGE
- *
- * Tidak melakukan scan.
  */
 
 private fun enablePackage(
@@ -2780,15 +2836,6 @@ private fun DeletedAppItem(
             verticalAlignment =
                 Alignment.CenterVertically
         ) {
-
-            /*
-             * Tidak mencoba mengambil icon dari
-             * PackageManager karena aplikasi sudah
-             * dihapus untuk user.
-             *
-             * Ikon sederhana dipakai sebagai penanda
-             * bahwa item adalah DELETED.
-             */
 
             Box(
 

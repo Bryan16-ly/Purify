@@ -35,6 +35,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -61,12 +63,24 @@ class MainActivity : ComponentActivity() {
      * ==========================================
      * USAGE ACCESS STATE
      * ==========================================
-     *
-     * State ini diperbarui setiap kali Activity
-     * kembali ke foreground.
      */
 
     var usageAccessGranted by
+        mutableStateOf(false)
+        private set
+
+    /*
+     * ==========================================
+     * THEME STATE
+     * ==========================================
+     *
+     * Menyimpan status tema aplikasi.
+     *
+     * true  = Dark
+     * false = Light
+     */
+
+    var darkTheme by
         mutableStateOf(false)
         private set
 
@@ -81,12 +95,93 @@ class MainActivity : ComponentActivity() {
         usageAccessGranted =
             hasUsageAccess(this)
 
+        /*
+         * ==========================================
+         * LOAD SAVED THEME
+         * ==========================================
+         *
+         * Membaca pilihan tema yang sebelumnya
+         * disimpan oleh Purify.
+         *
+         * Kalau belum pernah disimpan,
+         * default = Light.
+         */
+
+        darkTheme =
+            getSharedPreferences(
+                "purify_preferences",
+                Context.MODE_PRIVATE
+            )
+                .getBoolean(
+                    "dark_theme",
+                    false
+                )
+
         setContent {
 
-            PurifyApp(
-                usageAccessGranted =
-                    usageAccessGranted
-            )
+            /*
+             * ==========================================
+             * PURIFY MATERIAL THEME
+             * ==========================================
+             *
+             * Seluruh UI Purify berada di dalam
+             * MaterialTheme ini.
+             *
+             * Karena itu SetupScreen, AppListScreen,
+             * dialog, scanning screen, dan komponen
+             * lain akan mengikuti tema yang dipilih.
+             */
+
+            MaterialTheme(
+
+                colorScheme =
+                    if (darkTheme) {
+
+                        darkColorScheme()
+
+                    } else {
+
+                        lightColorScheme()
+                    }
+
+            ) {
+
+                PurifyApp(
+
+                    usageAccessGranted =
+                        usageAccessGranted,
+
+                    darkTheme =
+                        darkTheme,
+
+                    onThemeChanged = { enabled ->
+
+                        /*
+                         * Update UI secara langsung.
+                         */
+
+                        darkTheme =
+                            enabled
+
+                        /*
+                         * Simpan pilihan tema agar
+                         * tetap digunakan saat aplikasi
+                         * dibuka kembali.
+                         */
+
+                        getSharedPreferences(
+                            "purify_preferences",
+                            Context.MODE_PRIVATE
+                        )
+                            .edit()
+                            .putBoolean(
+                                "dark_theme",
+                                enabled
+                            )
+                            .apply()
+                    }
+                )
+            }
         }
     }
 
@@ -94,9 +189,6 @@ class MainActivity : ComponentActivity() {
      * ==========================================
      * ACTIVITY RESUME
      * ==========================================
-     *
-     * Dipanggil ketika user kembali dari
-     * halaman Usage Access Android.
      */
 
     override fun onResume() {
@@ -117,7 +209,12 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun PurifyApp(
-    usageAccessGranted: Boolean
+
+    usageAccessGranted: Boolean,
+
+    darkTheme: Boolean,
+
+    onThemeChanged: (Boolean) -> Unit
 ) {
 
     val context =
@@ -180,16 +277,6 @@ fun PurifyApp(
      * ==========================================
      * UPDATE APP STATE
      * ==========================================
-     *
-     * Fungsi ini dipanggil oleh AppListScreen
-     * setelah aplikasi berhasil di-disable.
-     *
-     * Tidak melakukan scan ulang.
-     *
-     * Hanya:
-     *
-     * 1. Mengubah state aplikasi di UI.
-     * 2. Menyimpan perubahan ke cache.
      */
 
     fun updateAppDisabled(
@@ -225,15 +312,6 @@ fun PurifyApp(
      * ==========================================
      * REMOVE APP FROM LOCAL LIST
      * ==========================================
-     *
-     * Fungsi ini dipanggil oleh AppListScreen
-     * setelah aplikasi berhasil di-uninstall
-     * untuk user.
-     *
-     * Tidak melakukan scan ulang.
-     *
-     * Aplikasi langsung dihapus dari state
-     * dan cache lokal.
      */
 
     fun removeAppLocally(
@@ -257,6 +335,11 @@ fun PurifyApp(
     var isScanning by remember {
 
         mutableStateOf(false)
+    }
+    
+    var restoreRefreshKey by remember {
+    
+        mutableStateOf(0)
     }
 
 
@@ -310,14 +393,6 @@ fun PurifyApp(
      * ==========================================
      * CURRENT ACCESS METHOD
      * ==========================================
-     *
-     * rememberUpdatedState memastikan listener
-     * Shizuku selalu membaca nilai selectedMethod
-     * terbaru.
-     *
-     * Tanpa ini, listener yang dibuat saat awal
-     * bisa saja masih melihat selectedMethod
-     * sebagai null.
      */
 
     val currentSelectedMethod by
@@ -386,17 +461,6 @@ fun PurifyApp(
                         false
                     }
 
-                /*
-                 * Kalau Shizuku hidup kembali dan
-                 * metode yang digunakan adalah ADB,
-                 * tutup dialog.
-                 *
-                 * Tidak melakukan scan.
-                 *
-                 * Cache akan dimuat oleh
-                 * LaunchedEffect di bawah.
-                 */
-
                 if (
                     currentSelectedMethod ==
                     AccessMethod.ADB &&
@@ -415,21 +479,10 @@ fun PurifyApp(
                 shizukuPermissionGranted =
                     false
 
-                /*
-                 * Hanya bereaksi kalau Purify
-                 * sedang menggunakan metode ADB.
-                 */
-
                 if (
                     currentSelectedMethod ==
                     AccessMethod.ADB
                 ) {
-
-                    /*
-                     * Hapus hanya dari state UI.
-                     *
-                     * CACHE TIDAK DIHAPUS.
-                     */
 
                     apps =
                         emptyList()
@@ -489,13 +542,6 @@ fun PurifyApp(
      * ==========================================
      * SHIZUKU STATUS MONITOR
      * ==========================================
-     *
-     * Listener menangani event binder.
-     *
-     * Monitor ini menjadi fallback tambahan.
-     *
-     * Setiap 1 detik Purify mengecek apakah
-     * Shizuku masih hidup.
      */
 
     LaunchedEffect(
@@ -541,12 +587,6 @@ fun PurifyApp(
 
                 shizukuPermissionGranted =
                     false
-
-                /*
-                 * Hanya hapus dari UI.
-                 *
-                 * Cache tetap aman.
-                 */
 
                 apps =
                     emptyList()
@@ -616,20 +656,6 @@ fun PurifyApp(
      * ==========================================
      * LOAD CACHE SETELAH SHIZUKU AKTIF
      * ==========================================
-     *
-     * Ketika Shizuku mati:
-     *
-     * apps = emptyList()
-     *
-     * Cache tetap tersimpan.
-     *
-     * Ketika Shizuku hidup kembali:
-     *
-     * shizukuPermissionGranted = true
-     *
-     * Bagian ini membaca kembali cache.
-     *
-     * TIDAK melakukan scan.
      */
 
     LaunchedEffect(
@@ -729,9 +755,6 @@ fun PurifyApp(
      * ==========================================
      * LOAD SAVED APPLICATION LIST
      * ==========================================
-     *
-     * Ini dipakai saat Purify pertama kali
-     * dibuka atau Activity dibuat kembali.
      */
 
     LaunchedEffect(
@@ -769,22 +792,12 @@ fun PurifyApp(
      * ==========================================
      * APPLICATION SCAN
      * ==========================================
-     *
-     * Scan hanya dilakukan kalau:
-     *
-     * 1. Usage Access aktif
-     * 2. Metode akses sudah dipilih
-     * 3. Cache belum tersedia
-     *
-     * Shizuku kembali hidup TIDAK memicu
-     * LaunchedEffect ini.
-     *
-     * Jadi tidak ada scan ulang.
      */
 
     LaunchedEffect(
         selectedMethod,
-        usageAccessGranted
+        usageAccessGranted,
+        restoreRefreshKey
     ) {
 
         if (
@@ -857,18 +870,14 @@ fun PurifyApp(
          * ==================================
          * CACHE CHECK
          * ==================================
-         *
-         * Kalau cache sudah ada:
-         *
-         * JANGAN SCAN.
          */
 
         if (
-            AppListStorage.hasCache(
+           AppListStorage.hasCache(
                 context
-            )
+           ) &&
+           restoreRefreshKey == 0
         ) {
-
             return@LaunchedEffect
         }
 
@@ -912,6 +921,13 @@ fun PurifyApp(
 
         isScanning =
             false
+        
+        if (
+            restoreRefreshKey != 0
+        ) {
+            restoreRefreshKey =
+                0
+        }
     }
 
 
@@ -1011,20 +1027,43 @@ fun PurifyApp(
                         ?: AccessMethod.ADB
 
                 AppListScreen(
+
                     apps = apps,
-                    accessMethod = currentMethod,
-                    onAppDisabled = { packageName ->
+
+                    accessMethod =
+                        currentMethod,
+
+                    darkTheme =
+                        darkTheme,
+
+                    onThemeChanged =
+                        onThemeChanged,
+
+                    onAppDisabled = {
+                        packageName ->
+
                         updateAppDisabled(
                             packageName
                         )
                     },
-                    onAppUninstalled = { packageName ->
+
+                    onAppUninstalled = {
+                        packageName ->
+
                         removeAppLocally(
                             packageName
                         )
                     },
+                    
+                    onAppRestored = {
+
+                        restoreRefreshKey++
+                    },
+
                     onSettingsClick = {
-                        selectedMethod = null
+
+                        selectedMethod =
+                            null
                     }
                 )
             }
@@ -1158,16 +1197,11 @@ fun PurifyApp(
 
         AlertDialog(
 
-            /*
-             * Background TIDAK menutup dialog.
-             */
-
             onDismissRequest = {
 
                 // Sengaja kosong.
                 // Dialog hanya ditutup melalui
                 // tombol yang tersedia.
-
             },
 
             icon = {
@@ -1223,13 +1257,6 @@ fun PurifyApp(
 
                                 showShizukuDialog =
                                     false
-
-                                /*
-                                 * TIDAK ADA SCAN ULANG.
-                                 *
-                                 * Cache akan dimuat oleh
-                                 * LaunchedEffect.
-                                 */
                             }
 
                         } else {
@@ -1288,16 +1315,8 @@ fun PurifyApp(
 
                     onClick = {
 
-                        /*
-                         * Tutup dialog.
-                         */
-
                         showShizukuDialog =
                             false
-
-                        /*
-                         * Kembali ke metode akses.
-                         */
 
                         selectedMethod =
                             null

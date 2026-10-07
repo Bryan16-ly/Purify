@@ -101,6 +101,61 @@ object DeletedAppStorage {
             .apply()
     }
 
+    fun removeApp(
+        context: Context,
+        packageName: String
+    ) {
+    
+        val preferences =
+            context.getSharedPreferences(
+                PREF_NAME,
+                Context.MODE_PRIVATE
+            )
+    
+        val existingJson =
+            preferences.getString(
+                KEY_APPS,
+                null
+            )
+                ?: return
+    
+        try {
+    
+            val jsonArray =
+                JSONArray(existingJson)
+    
+            val newArray =
+                JSONArray()
+    
+            for (index in 0 until jsonArray.length()) {
+    
+                val jsonObject =
+                    jsonArray.getJSONObject(index)
+    
+                if (
+                    jsonObject.optString(
+                        "packageName"
+                    ) != packageName
+                ) {
+    
+                    newArray.put(
+                        jsonObject
+                    )
+                }
+            }
+    
+            preferences
+                .edit()
+                .putString(
+                    KEY_APPS,
+                    newArray.toString()
+                )
+                .apply()
+    
+        } catch (_: Exception) {
+        }
+    }
+
     fun loadApps(
         context: Context
     ): List<DeletedAppInfo> {
