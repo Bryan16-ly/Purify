@@ -28,14 +28,17 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -81,7 +84,7 @@ fun AppListScreen(
 
     var selectedApp by remember { mutableStateOf<AppInfo?>(null) }
     var selectedDeletedApp by remember { mutableStateOf<DeletedAppInfo?>(null) }
-    var selectedFilter by remember { mutableStateOf("ALL") }
+    var selectedFilter by remember { mutableStateOf("ALL") } // Tetap ALL buat logic internal
     var showSettings by remember { mutableStateOf(false) }
     var isSearching by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
@@ -142,6 +145,7 @@ fun AppListScreen(
     val allVisibleSelected = filteredInstalledApps.isNotEmpty() && filteredInstalledApps.all { it.packageName in selectedPackages }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        // ================= HEADER =================
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             if (selectionMode) {
                 IconButton(onClick = { selectionMode = false; selectedPackages = emptySet() }) {
@@ -163,22 +167,6 @@ fun AppListScreen(
                 ) {
                     Text(text = if (allVisibleSelected) "Batal Semua" else "Pilih Semua")
                 }
-            } else if (showDisabledApps) {
-                IconButton(
-                    onClick = {
-                        showDisabledApps = false
-                        selectedFilter = "ALL"
-                        selectedApp = null
-                        selectedDeletedApp = null
-                    }
-                ) {
-                    Icon(imageVector = Icons.Default.ArrowBack, contentDescription = "Kembali")
-                }
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(text = "Disabled Applications", style = MaterialTheme.typography.headlineMedium)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(text = "Total: ${disabledApps.size + deletedApps.size}", style = MaterialTheme.typography.bodyMedium)
-                }
             } else if (isSearching) {
                 OutlinedTextField(
                     value = searchQuery,
@@ -186,7 +174,7 @@ fun AppListScreen(
                     modifier = Modifier.weight(1f),
                     singleLine = true,
                     placeholder = { Text(text = "Cari aplikasi...") },
-                    leadingIcon = { Icon(imageVector = Icons.Default.Search, contentDescription = "Search") },
+                    leadingIcon = { Icon(imageVector = Icons.Default.Search, contentDescription = "Pencarian") },
                     trailingIcon = {
                         IconButton(onClick = { searchQuery = ""; isSearching = false }) {
                             Icon(imageVector = Icons.Default.Close, contentDescription = "Tutup pencarian")
@@ -195,36 +183,132 @@ fun AppListScreen(
                 )
             } else {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(text = "Applications", style = MaterialTheme.typography.headlineMedium)
+                    Text(text = if (showDisabledApps) "Aplikasi Nonaktif" else "Aplikasi", style = MaterialTheme.typography.headlineMedium)
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Total: ${activeApps.size} | User: ${activeApps.count { !it.isSystemApp }} | System: ${activeApps.count { it.isSystemApp }}",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
+                    if (showDisabledApps) {
+                        Text(text = "Total: ${disabledApps.size + deletedApps.size}", style = MaterialTheme.typography.bodyMedium)
+                    } else {
+                        Text(
+                            text = "Total: ${activeApps.size} | Pengguna: ${activeApps.count { !it.isSystemApp }} | Sistem: ${activeApps.count { it.isSystemApp }}",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
                 }
+                
+                IconButton(
+ 				   onClick = { 
+   						     selectionMode = true
+   						     selectedPackages = emptySet() 
+  				  }
+				) {
+ 				   Icon(
+   				     imageVector = Icons.Default.Checklist,
+ 				       contentDescription = "Mode Tandai"
+  				  )
+				}
+
+
                 IconButton(onClick = { isSearching = true }) {
                     Icon(imageVector = Icons.Default.Search, contentDescription = "Cari aplikasi")
                 }
-                IconButton(onClick = { showSettings = true }) {
-                    Icon(imageVector = Icons.Default.Settings, contentDescription = "Settings")
+                
+                Box {
+                    IconButton(onClick = { showSettings = true }) {
+                        Icon(imageVector = Icons.Default.Settings, contentDescription = "Pengaturan")
+                    }
+
+                    DropdownMenu(
+                        expanded = showSettings,
+                        onDismissRequest = { showSettings = false },
+                        modifier = Modifier.width(220.dp)
+                    ) {
+                        DropdownMenuItem(
+                            text = { 
+                                Column {
+                                    Text("Ubah metode akses", style = MaterialTheme.typography.bodyLarge)
+                                    Text("Saat ini: ${accessMethod.name}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            },
+                            onClick = { 
+                                showSettings = false
+                                onSettingsClick()
+                            }
+                        )
+                        
+                        HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+
+                        DropdownMenuItem(
+                            text = { 
+                                Column {
+                                    Text("Pindai aplikasi", style = MaterialTheme.typography.bodyLarge)
+                                    Text("Perbarui daftar manual", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            },
+                            onClick = { 
+                                showSettings = false
+                                Toast.makeText(context, "Fungsi pindai aplikasi diklik!", Toast.LENGTH_SHORT).show()
+                            }
+                        )
+
+                        HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+
+                        DropdownMenuItem(
+                            text = { 
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("Tema gelap", style = MaterialTheme.typography.bodyLarge)
+                                    Switch(
+                                        checked = darkTheme,
+                                        onCheckedChange = { enabled ->
+                                            onThemeChanged(enabled)
+                                            Toast.makeText(context, if (enabled) "Tema gelap aktif" else "Tema terang aktif", Toast.LENGTH_SHORT).show()
+                                        },
+                                        modifier = Modifier.padding(start = 8.dp)
+                                    )
+                                }
+                            },
+                            onClick = { 
+                                val newState = !darkTheme
+                                onThemeChanged(newState)
+                                Toast.makeText(context, if (newState) "Tema gelap aktif" else "Tema terang aktif", Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                    }
                 }
             }
         }
 
-        if (!showDisabledApps && !selectionMode && !isSearching) {
+        // ================= TAB AKTIF & NONAKTIF =================
+        if (!selectionMode && !isSearching) {
             Spacer(modifier = Modifier.height(12.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    onClick = { showDisabledApps = true; selectedFilter = "ALL"; searchQuery = ""; isSearching = false },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text(text = "Disabled (${disabledApps.size + deletedApps.size})")
+                if (!showDisabledApps) {
+                    Button(onClick = { }, modifier = Modifier.weight(1f)) {
+                        Text("Aktif (${activeApps.size})")
+                    }
+                } else {
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = { showDisabledApps = false; selectedFilter = "ALL"; searchQuery = "" }, 
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Aktif (${activeApps.size})")
+                    }
                 }
-                Button(
-                    onClick = { selectionMode = true; selectedPackages = emptySet() },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text(text = "Tandai")
+
+                if (showDisabledApps) {
+                    Button(onClick = { }, modifier = Modifier.weight(1f)) {
+                        Text("Nonaktif/Terhapus (${disabledApps.size + deletedApps.size})")
+                    }
+                } else {
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = { showDisabledApps = true; selectedFilter = "ALL"; searchQuery = "" }, 
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Nonaktif/Terhapus (${disabledApps.size + deletedApps.size})")
+                    }
                 }
             }
         }
@@ -285,7 +369,7 @@ fun AppListScreen(
                     enabled = selectedPackages.isNotEmpty(),
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text(text = "Disable (${selectedPackages.size})")
+                    Text(text = "Nonaktifkan (${selectedPackages.size})")
                 }
 
                 Button(
@@ -328,36 +412,36 @@ fun AppListScreen(
                     Column(modifier = Modifier.fillMaxWidth().padding(24.dp)) {
                         Text(text = app.appName, style = MaterialTheme.typography.headlineSmall)
                         Spacer(modifier = Modifier.height(4.dp))
-                        Text(text = if (app.isEnabled) "AKTIF" else "DISABLED", style = MaterialTheme.typography.labelMedium)
+                        Text(text = if (app.isEnabled) "AKTIF" else "NONAKTIF", style = MaterialTheme.typography.labelMedium)
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        AppInfoRow(title = "Package", value = app.packageName)
-                        AppInfoRow(title = "Version", value = "${app.versionName} (${app.versionCode})")
+                        AppInfoRow(title = "Nama Paket", value = app.packageName)
+                        AppInfoRow(title = "Versi", value = "${app.versionName} (${app.versionCode})")
                         AppInfoRow(title = "Target SDK", value = app.targetSdk.toString())
                         AppInfoRow(title = "Min SDK", value = app.minSdk.toString())
                         AppInfoRow(title = "UID", value = app.uid.toString())
                         Spacer(modifier = Modifier.height(12.dp))
 
-                        Text(text = "Storage", style = MaterialTheme.typography.titleMedium)
-                        AppInfoRow(title = "App", value = formatFileSize(app.apkSize))
+                        Text(text = "Penyimpanan", style = MaterialTheme.typography.titleMedium)
+                        AppInfoRow(title = "Aplikasi", value = formatFileSize(app.apkSize))
                         AppInfoRow(title = "Data", value = formatFileSize(app.dataSize))
                         AppInfoRow(title = "Cache", value = formatFileSize(app.cacheSize))
                         AppInfoRow(title = "Total", value = formatFileSize(app.totalSize))
                         Spacer(modifier = Modifier.height(8.dp))
 
-                        AppInfoRow(title = "Installer", value = app.installer)
+                        AppInfoRow(title = "Pemasang", value = app.installer)
                         if (accessMethod == AccessMethod.ROOT) {
                             Spacer(modifier = Modifier.height(8.dp))
-                            Text(text = "APK Path", style = MaterialTheme.typography.labelMedium)
+                            Text(text = "Lokasi APK", style = MaterialTheme.typography.labelMedium)
                             Text(text = app.apkPath, style = MaterialTheme.typography.bodySmall)
                         }
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        Text(text = "Permissions", style = MaterialTheme.typography.titleMedium)
+                        Text(text = "Izin Aplikasi", style = MaterialTheme.typography.titleMedium)
                         Spacer(modifier = Modifier.height(8.dp))
 
                         if (app.requestedPermissions.isEmpty()) {
-                            Text(text = "No requested permissions", style = MaterialTheme.typography.bodySmall)
+                            Text(text = "Tidak ada izin yang diminta", style = MaterialTheme.typography.bodySmall)
                         } else {
                             Column(modifier = Modifier.fillMaxWidth().height(180.dp)) {
                                 LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -395,7 +479,7 @@ fun AppListScreen(
                                         }
                                     }
                                 ) {
-                                    Text(text = "Enable")
+                                    Text(text = "Aktifkan")
                                 }
                                 Spacer(modifier = Modifier.width(8.dp))
                             } else {
@@ -418,7 +502,7 @@ fun AppListScreen(
                                         }
                                     }
                                 ) {
-                                    Text(text = "Disable")
+                                    Text(text = "Nonaktifkan")
                                 }
                                 Spacer(modifier = Modifier.width(8.dp))
                             }
@@ -460,16 +544,16 @@ fun AppListScreen(
                 Column(modifier = Modifier.fillMaxWidth().padding(24.dp)) {
                     Text(text = app.appName, style = MaterialTheme.typography.headlineSmall)
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text(text = "DELETED", style = MaterialTheme.typography.labelMedium)
+                    Text(text = "TERHAPUS", style = MaterialTheme.typography.labelMedium)
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    AppInfoRow(title = "Package", value = app.packageName)
-                    AppInfoRow(title = "Version", value = "${app.versionName} (${app.versionCode})")
+                    AppInfoRow(title = "Nama Paket", value = app.packageName)
+                    AppInfoRow(title = "Versi", value = "${app.versionName} (${app.versionCode})")
                     AppInfoRow(title = "APK", value = formatFileSize(app.apkSize))
-                    AppInfoRow(title = "APK Path", value = app.apkPath)
+                    AppInfoRow(title = "Lokasi APK", value = app.apkPath)
                     Spacer(modifier = Modifier.height(20.dp))
 
-                    Text(text = "Aplikasi ini sudah dihapus untuk user 0.", style = MaterialTheme.typography.bodyMedium)
+                    Text(text = "Aplikasi ini sudah dihapus untuk pengguna 0.", style = MaterialTheme.typography.bodyMedium)
                     Spacer(modifier = Modifier.height(20.dp))
 
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -483,7 +567,7 @@ fun AppListScreen(
                                 }
                             }
                         ) {
-                            Text(text = "Restore")
+                            Text(text = "Pulihkan")
                         }
                         Spacer(modifier = Modifier.width(8.dp))
                         Button(onClick = { selectedDeletedApp = null }) {
@@ -493,43 +577,6 @@ fun AppListScreen(
                 }
             }
         }
-    }
-
-    if (showSettings) {
-        AlertDialog(
-            onDismissRequest = { showSettings = false },
-            title = { Text(text = "Settings") },
-            text = {
-                Column {
-                    Text(text = "Metode akses saat ini: " + accessMethod.name)
-                    Spacer(modifier = Modifier.height(20.dp))
-                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(text = "Tema gelap", style = MaterialTheme.typography.titleMedium)
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(text = if (darkTheme) "Aktif" else "Nonaktif", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Switch(
-                            checked = darkTheme,
-                            onCheckedChange = { enabled ->
-                                onThemeChanged(enabled)
-                                Toast.makeText(context, if (enabled) "Tema gelap diaktifkan" else "Tema terang diaktifkan", Toast.LENGTH_SHORT).show()
-                            }
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showSettings = false; onSettingsClick() }) {
-                    Text(text = "Ubah metode akses")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showSettings = false }) {
-                    Text(text = "Batal")
-                }
-            }
-        )
     }
 }
 
@@ -544,7 +591,7 @@ private fun enablePackage(context: Context, packageName: String, accessMethod: A
                     if (!Shizuku.pingBinder()) {
                         error = "Shizuku tidak aktif"
                     } else if (Shizuku.checkSelfPermission() != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                        error = "Permission Shizuku belum diberikan"
+                        error = "Izin Shizuku belum diberikan"
                     } else {
                         val shizukuClass = Class.forName("rikka.shizuku.Shizuku")
                         val newProcessMethod = shizukuClass.getDeclaredMethod("newProcess", Array<String>::class.java, Array<String>::class.java, String::class.java)
@@ -571,7 +618,7 @@ private fun enablePackage(context: Context, packageName: String, accessMethod: A
             success = false
         }
         Handler(Looper.getMainLooper()).post {
-            val message = if (success) "Aplikasi berhasil di-enable" else error.trim().ifEmpty { output.trim() }.ifEmpty { "Gagal mengaktifkan aplikasi" }
+            val message = if (success) "Aplikasi berhasil diaktifkan" else error.trim().ifEmpty { output.trim() }.ifEmpty { "Gagal mengaktifkan aplikasi" }
             Toast.makeText(context, message.take(300), Toast.LENGTH_LONG).show()
             onResult(success)
         }
@@ -589,7 +636,7 @@ private fun disablePackage(context: Context, packageName: String, accessMethod: 
                     if (!Shizuku.pingBinder()) {
                         error = "Shizuku tidak aktif"
                     } else if (Shizuku.checkSelfPermission() != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                        error = "Permission Shizuku belum diberikan"
+                        error = "Izin Shizuku belum diberikan"
                     } else {
                         val shizukuClass = Class.forName("rikka.shizuku.Shizuku")
                         val newProcessMethod = shizukuClass.getDeclaredMethod("newProcess", Array<String>::class.java, Array<String>::class.java, String::class.java)
@@ -616,7 +663,7 @@ private fun disablePackage(context: Context, packageName: String, accessMethod: 
             success = false
         }
         Handler(Looper.getMainLooper()).post {
-            val message = if (success) "Aplikasi berhasil di-disable" else error.trim().ifEmpty { output.trim() }.ifEmpty { "Gagal mematikan aplikasi" }
+            val message = if (success) "Aplikasi berhasil dinonaktifkan" else error.trim().ifEmpty { output.trim() }.ifEmpty { "Gagal mematikan aplikasi" }
             Toast.makeText(context, message.take(300), Toast.LENGTH_LONG).show()
             onResult(success)
         }
@@ -633,7 +680,7 @@ private fun AppInfoRow(title: String, value: String) {
             Toast.makeText(context, "$title disalin", Toast.LENGTH_SHORT).show()
         }.padding(vertical = 5.dp)
     ) {
-        Text(text = "$title:", modifier = Modifier.width(90.dp), style = MaterialTheme.typography.labelMedium)
+        Text(text = "$title:", modifier = Modifier.width(100.dp), style = MaterialTheme.typography.labelMedium)
         Text(text = value, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
     }
 }
@@ -664,9 +711,9 @@ private fun AppItem(app: AppInfo, disabled: Boolean, selected: Boolean, selectio
                 Text(text = app.packageName, style = MaterialTheme.typography.bodySmall)
                 Spacer(modifier = Modifier.height(6.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(text = if (app.isSystemApp) "SYSTEM" else "USER", style = MaterialTheme.typography.labelMedium)
+                    Text(text = if (app.isSystemApp) "SISTEM" else "PENGGUNA", style = MaterialTheme.typography.labelMedium)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = if (disabled) "DISABLED" else "AKTIF", style = MaterialTheme.typography.labelMedium)
+                    Text(text = if (disabled) "NONAKTIF" else "AKTIF", style = MaterialTheme.typography.labelMedium)
                 }
             }
             if (selectionMode) {
@@ -693,9 +740,9 @@ private fun DeletedAppItem(app: DeletedAppInfo, onClick: () -> Unit) {
                 Text(text = app.packageName, style = MaterialTheme.typography.bodySmall)
                 Spacer(modifier = Modifier.height(6.dp))
                 Row {
-                    Text(text = if (app.isSystemApp) "SYSTEM" else "USER", style = MaterialTheme.typography.labelMedium)
+                    Text(text = if (app.isSystemApp) "SISTEM" else "PENGGUNA", style = MaterialTheme.typography.labelMedium)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "DELETED", style = MaterialTheme.typography.labelMedium)
+                    Text(text = "TERHAPUS", style = MaterialTheme.typography.labelMedium)
                 }
             }
         }
