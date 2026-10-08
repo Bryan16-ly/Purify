@@ -11,6 +11,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -55,11 +56,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.graphics.drawable.toBitmap
 import java.util.Locale
 import rikka.shizuku.Shizuku
 
@@ -117,28 +120,33 @@ fun AppListScreen(
     val deletedApps = displayApps.filter { it.status == AppStatus.DELETED }.mapNotNull { it.deletedAppInfo }
     val currentInstalledApps = if (showDisabledApps) disabledApps else activeApps
 
-    val filteredInstalledApps = currentInstalledApps
-        .filter { app ->
+    // Tambahkan remember dengan parameter kunci agar tidak filter ulang setiap frame
+    val filteredInstalledApps = remember(currentInstalledApps, selectedFilter, searchQuery, showDisabledApps) {
+        currentInstalledApps
+            .filter { app ->
+                when (selectedFilter) {
+                    "USER" -> !app.isSystemApp
+                    "SYSTEM" -> app.isSystemApp
+                    else -> true
+                }
+            }
+            .filter { app ->
+                if (showDisabledApps || searchQuery.isBlank()) {
+                    true
+                } else {
+                    app.appName.contains(searchQuery, ignoreCase = true) ||
+                    app.packageName.contains(searchQuery, ignoreCase = true)
+                }
+            }
+    }
+
+    val filteredDeletedApps = remember(deletedApps, selectedFilter) {
+        deletedApps.filter { app ->
             when (selectedFilter) {
                 "USER" -> !app.isSystemApp
                 "SYSTEM" -> app.isSystemApp
                 else -> true
             }
-        }
-        .filter { app ->
-            if (showDisabledApps || searchQuery.isBlank()) {
-                true
-            } else {
-                app.appName.contains(searchQuery, ignoreCase = true) ||
-                app.packageName.contains(searchQuery, ignoreCase = true)
-            }
-        }
-
-    val filteredDeletedApps = deletedApps.filter { app ->
-        when (selectedFilter) {
-            "USER" -> !app.isSystemApp
-            "SYSTEM" -> app.isSystemApp
-            else -> true
         }
     }
 
@@ -699,11 +707,39 @@ private fun formatFileSize(size: Long): String {
 private fun AppItem(app: AppInfo, disabled: Boolean, selected: Boolean, selectionMode: Boolean, onClick: () -> Unit) {
     Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
         Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            AndroidView(
-                factory = { context -> ImageView(context) },
-                update = { imageView -> imageView.setImageDrawable(app.icon) },
-                modifier = Modifier.size(36.dp)
-            )
+            
+            // Bikin state buat nampung gambar kalau proses di background udah kelar
+            var iconBitmap by remember(app.packageName) { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
+
+            // Lempar proses berat toBitmap ke Dispatchers.IO (Background Thread)
+            LaunchedEffect(app.packageName) {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val drawable = app.icon
+                    val w = if (drawable.intrinsicWidth > 0) drawable.intrinsicWidth else 144
+                    val h = if (drawable.intrinsicHeight > 0) drawable.intrinsicHeight else 144
+                    val bmp = drawable.toBitmap(width = w, height = h).asImageBitmap()
+                    iconBitmap = bmp
+                }
+            }
+
+            // Tampilin kotak abu-abu sebagai placeholder kalau bitmap lagi dimasak di background
+            if (iconBitmap != null) {
+                Image(
+                    bitmap = iconBitmap!!,
+                    contentDescription = "Ikon ${app.appName}",
+                    modifier = Modifier.size(36.dp)
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(
+                            MaterialTheme.colorScheme.surfaceVariant, 
+                            RoundedCornerShape(8.dp)
+                        )
+                )
+            }
+
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(text = app.appName, style = MaterialTheme.typography.titleMedium)
