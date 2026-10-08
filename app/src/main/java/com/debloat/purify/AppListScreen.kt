@@ -5,66 +5,33 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
-import android.widget.ImageView
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Checklist
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.graphics.drawable.toBitmap
-import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import rikka.shizuku.Shizuku
+import java.util.Locale
 
 @Composable
 fun AppListScreen(
@@ -87,7 +54,7 @@ fun AppListScreen(
 
     var selectedApp by remember { mutableStateOf<AppInfo?>(null) }
     var selectedDeletedApp by remember { mutableStateOf<DeletedAppInfo?>(null) }
-    var selectedFilter by remember { mutableStateOf("ALL") } // Tetap ALL buat logic internal
+    var selectedFilter by remember { mutableStateOf("ALL") }
     var showSettings by remember { mutableStateOf(false) }
     var isSearching by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
@@ -100,9 +67,7 @@ fun AppListScreen(
         selectedPackages = emptySet()
     }
 
-    BackHandler(enabled = showSettings) {
-        showSettings = false
-    }
+    BackHandler(enabled = showSettings) { showSettings = false }
 
     BackHandler(enabled = selectedApp != null || selectedDeletedApp != null) {
         selectedApp = null
@@ -120,7 +85,6 @@ fun AppListScreen(
     val deletedApps = displayApps.filter { it.status == AppStatus.DELETED }.mapNotNull { it.deletedAppInfo }
     val currentInstalledApps = if (showDisabledApps) disabledApps else activeApps
 
-    // Tambahkan remember dengan parameter kunci agar tidak filter ulang setiap frame
     val filteredInstalledApps = remember(currentInstalledApps, selectedFilter, searchQuery, showDisabledApps) {
         currentInstalledApps
             .filter { app ->
@@ -153,7 +117,6 @@ fun AppListScreen(
     val allVisibleSelected = filteredInstalledApps.isNotEmpty() && filteredInstalledApps.all { it.packageName in selectedPackages }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        // ================= HEADER =================
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             if (selectionMode) {
                 IconButton(onClick = { selectionMode = false; selectedPackages = emptySet() }) {
@@ -166,10 +129,10 @@ fun AppListScreen(
                 }
                 TextButton(
                     onClick = {
-                        if (allVisibleSelected) {
-                            selectedPackages = selectedPackages - filteredInstalledApps.map { it.packageName }.toSet()
+                        selectedPackages = if (allVisibleSelected) {
+                            selectedPackages - filteredInstalledApps.map { it.packageName }.toSet()
                         } else {
-                            selectedPackages = selectedPackages + filteredInstalledApps.map { it.packageName }.toSet()
+                            selectedPackages + filteredInstalledApps.map { it.packageName }.toSet()
                         }
                     }
                 ) {
@@ -203,18 +166,9 @@ fun AppListScreen(
                     }
                 }
                 
-                IconButton(
- 				   onClick = { 
-   						     selectionMode = true
-   						     selectedPackages = emptySet() 
-  				  }
-				) {
- 				   Icon(
-   				     imageVector = Icons.Default.Checklist,
- 				       contentDescription = "Mode Tandai"
-  				  )
-				}
-
+                IconButton(onClick = { selectionMode = true; selectedPackages = emptySet() }) {
+                    Icon(imageVector = Icons.Default.Checklist, contentDescription = "Mode Tandai")
+                }
 
                 IconButton(onClick = { isSearching = true }) {
                     Icon(imageVector = Icons.Default.Search, contentDescription = "Cari aplikasi")
@@ -242,9 +196,7 @@ fun AppListScreen(
                                 onSettingsClick()
                             }
                         )
-                        
                         HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
-
                         DropdownMenuItem(
                             text = { 
                                 Column {
@@ -257,9 +209,7 @@ fun AppListScreen(
                                 Toast.makeText(context, "Fungsi pindai aplikasi diklik!", Toast.LENGTH_SHORT).show()
                             }
                         )
-
                         HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
-
                         DropdownMenuItem(
                             text = { 
                                 Row(
@@ -289,7 +239,6 @@ fun AppListScreen(
             }
         }
 
-        // ================= TAB AKTIF & NONAKTIF =================
         if (!selectionMode && !isSearching) {
             Spacer(modifier = Modifier.height(12.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -298,10 +247,7 @@ fun AppListScreen(
                         Text("Aktif (${activeApps.size})")
                     }
                 } else {
-                    androidx.compose.material3.OutlinedButton(
-                        onClick = { showDisabledApps = false; selectedFilter = "ALL"; searchQuery = "" }, 
-                        modifier = Modifier.weight(1f)
-                    ) {
+                    OutlinedButton(onClick = { showDisabledApps = false; selectedFilter = "ALL"; searchQuery = "" }, modifier = Modifier.weight(1f)) {
                         Text("Aktif (${activeApps.size})")
                     }
                 }
@@ -311,10 +257,7 @@ fun AppListScreen(
                         Text("Nonaktif/Terhapus (${disabledApps.size + deletedApps.size})")
                     }
                 } else {
-                    androidx.compose.material3.OutlinedButton(
-                        onClick = { showDisabledApps = true; selectedFilter = "ALL"; searchQuery = "" }, 
-                        modifier = Modifier.weight(1f)
-                    ) {
+                    OutlinedButton(onClick = { showDisabledApps = true; selectedFilter = "ALL"; searchQuery = "" }, modifier = Modifier.weight(1f)) {
                         Text("Nonaktif/Terhapus (${disabledApps.size + deletedApps.size})")
                     }
                 }
@@ -364,7 +307,7 @@ fun AppListScreen(
                         if (selectedApps.isEmpty()) {
                             Toast.makeText(context, "Belum ada aplikasi yang dipilih", Toast.LENGTH_SHORT).show()
                         } else {
-                            PackageManagerAction.disableMultiple(context = context, apps = selectedApps, accessMethod = accessMethod) { successCount, _ ->
+                            PackageManagerAction.disableMultiple(context, selectedApps, accessMethod) { successCount, _ ->
                                 selectionMode = false
                                 selectedPackages = emptySet()
                                 if (successCount == selectedApps.size) {
@@ -386,7 +329,7 @@ fun AppListScreen(
                         if (selectedApps.isEmpty()) {
                             Toast.makeText(context, "Belum ada aplikasi yang dipilih", Toast.LENGTH_SHORT).show()
                         } else {
-                            PackageManagerAction.uninstallMultiple(context = context, apps = selectedApps, accessMethod = accessMethod) { successCount, _ ->
+                            PackageManagerAction.uninstallMultiple(context, selectedApps, accessMethod) { successCount, _ ->
                                 selectionMode = false
                                 selectedPackages = emptySet()
                                 if (successCount == selectedApps.size) {
@@ -464,60 +407,34 @@ fun AppListScreen(
 
                         Spacer(modifier = Modifier.height(20.dp))
 
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End
-                        ) {
-                            if (!app.isEnabled) {
-                                Button(
-                                    onClick = {
-                                        enablePackage(context = context, packageName = app.packageName, accessMethod = accessMethod) { success ->
-                                            if (success) {
-                                                selectedApp = null
-                                                val updatedApps = apps.map { currentApp ->
-                                                    if (currentApp.packageName == app.packageName) {
-                                                        currentApp.copy(isEnabled = true)
-                                                    } else {
-                                                        currentApp
-                                                    }
-                                                }
-                                                AppListStorage.saveApps(context = context, apps = updatedApps)
-                                                displayApps = AppListStorage.loadDisplayApps(context)
-                                            }
-                                        }
-                                    }
-                                ) {
-                                    Text(text = "Aktifkan")
-                                }
-                                Spacer(modifier = Modifier.width(8.dp))
-                            } else {
-                                Button(
-                                    onClick = {
-                                        disablePackage(context = context, packageName = app.packageName, accessMethod = accessMethod) { success ->
-                                            if (success) {
-                                                selectedApp = null
-                                                onAppDisabled(app.packageName)
-                                                val updatedApps = apps.map { currentApp ->
-                                                    if (currentApp.packageName == app.packageName) {
-                                                        currentApp.copy(isEnabled = false)
-                                                    } else {
-                                                        currentApp
-                                                    }
-                                                }
-                                                AppListStorage.saveApps(context = context, apps = updatedApps)
-                                                displayApps = AppListStorage.loadDisplayApps(context)
-                                            }
-                                        }
-                                    }
-                                ) {
-                                    Text(text = "Nonaktifkan")
-                                }
-                                Spacer(modifier = Modifier.width(8.dp))
-                            }
-
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                             Button(
                                 onClick = {
-                                    PackageManagerAction.uninstall(context = context, app = app, accessMethod = accessMethod) { success ->
+                                    val isEnabling = !app.isEnabled
+                                    changePackageState(context, app.packageName, accessMethod, isEnabling) { success ->
+                                        if (success) {
+                                            selectedApp = null
+                                            if (isEnabling) {
+                                                // Kalau di enable, cache gak berubah di callback, cuma ubah list
+                                                val updatedApps = apps.map { if (it.packageName == app.packageName) it.copy(isEnabled = true) else it }
+                                                AppListStorage.saveApps(context, updatedApps)
+                                            } else {
+                                                onAppDisabled(app.packageName)
+                                                val updatedApps = apps.map { if (it.packageName == app.packageName) it.copy(isEnabled = false) else it }
+                                                AppListStorage.saveApps(context, updatedApps)
+                                            }
+                                            displayApps = AppListStorage.loadDisplayApps(context)
+                                        }
+                                    }
+                                }
+                            ) {
+                                Text(text = if (app.isEnabled) "Nonaktifkan" else "Aktifkan")
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            
+                            Button(
+                                onClick = {
+                                    PackageManagerAction.uninstall(context, app, accessMethod) { success ->
                                         if (success) {
                                             selectedApp = null
                                             onAppUninstalled(app.packageName)
@@ -567,7 +484,7 @@ fun AppListScreen(
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                         Button(
                             onClick = {
-                                PackageManagerAction.restore(context = context, app = app, accessMethod = accessMethod) { success ->
+                                PackageManagerAction.restore(context, app, accessMethod) { success ->
                                     if (success) {
                                         selectedDeletedApp = null
                                         onAppRestored()
@@ -588,56 +505,21 @@ fun AppListScreen(
     }
 }
 
-private fun enablePackage(context: Context, packageName: String, accessMethod: AccessMethod, onResult: (Boolean) -> Unit) {
+// Fungsi sakti buat nyatuin logic enable & disable
+private fun changePackageState(
+    context: Context,
+    packageName: String,
+    accessMethod: AccessMethod,
+    enable: Boolean,
+    onResult: (Boolean) -> Unit
+) {
     Thread {
         var success = false
         var output = ""
         var error = ""
-        try {
-            when (accessMethod) {
-                AccessMethod.ADB -> {
-                    if (!Shizuku.pingBinder()) {
-                        error = "Shizuku tidak aktif"
-                    } else if (Shizuku.checkSelfPermission() != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                        error = "Izin Shizuku belum diberikan"
-                    } else {
-                        val shizukuClass = Class.forName("rikka.shizuku.Shizuku")
-                        val newProcessMethod = shizukuClass.getDeclaredMethod("newProcess", Array<String>::class.java, Array<String>::class.java, String::class.java)
-                        newProcessMethod.isAccessible = true
-                        val process = newProcessMethod.invoke(null, arrayOf("sh", "-c", "pm enable --user 0 $packageName"), null, null) as rikka.shizuku.ShizukuRemoteProcess
-                        output = process.inputStream.bufferedReader().use { it.readText() }
-                        error = process.errorStream.bufferedReader().use { it.readText() }
-                        process.waitFor()
-                        success = process.exitValue() == 0
-                        process.destroy()
-                    }
-                }
-                AccessMethod.ROOT -> {
-                    val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "pm enable --user 0 $packageName"))
-                    output = process.inputStream.bufferedReader().use { it.readText() }
-                    error = process.errorStream.bufferedReader().use { it.readText() }
-                    process.waitFor()
-                    success = process.exitValue() == 0
-                    process.destroy()
-                }
-            }
-        } catch (exception: Exception) {
-            error = exception.message ?: exception.javaClass.simpleName
-            success = false
-        }
-        Handler(Looper.getMainLooper()).post {
-            val message = if (success) "Aplikasi berhasil diaktifkan" else error.trim().ifEmpty { output.trim() }.ifEmpty { "Gagal mengaktifkan aplikasi" }
-            Toast.makeText(context, message.take(300), Toast.LENGTH_LONG).show()
-            onResult(success)
-        }
-    }.start()
-}
+        val actionCommand = if (enable) "enable" else "disable-user"
+        val fullCommand = "pm $actionCommand --user 0 $packageName"
 
-private fun disablePackage(context: Context, packageName: String, accessMethod: AccessMethod, onResult: (Boolean) -> Unit) {
-    Thread {
-        var success = false
-        var output = ""
-        var error = ""
         try {
             when (accessMethod) {
                 AccessMethod.ADB -> {
@@ -649,7 +531,7 @@ private fun disablePackage(context: Context, packageName: String, accessMethod: 
                         val shizukuClass = Class.forName("rikka.shizuku.Shizuku")
                         val newProcessMethod = shizukuClass.getDeclaredMethod("newProcess", Array<String>::class.java, Array<String>::class.java, String::class.java)
                         newProcessMethod.isAccessible = true
-                        val process = newProcessMethod.invoke(null, arrayOf("sh", "-c", "pm disable-user --user 0 $packageName"), null, null) as rikka.shizuku.ShizukuRemoteProcess
+                        val process = newProcessMethod.invoke(null, arrayOf("sh", "-c", fullCommand), null, null) as rikka.shizuku.ShizukuRemoteProcess
                         output = process.inputStream.bufferedReader().use { it.readText() }
                         error = process.errorStream.bufferedReader().use { it.readText() }
                         process.waitFor()
@@ -658,7 +540,7 @@ private fun disablePackage(context: Context, packageName: String, accessMethod: 
                     }
                 }
                 AccessMethod.ROOT -> {
-                    val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "pm disable-user --user 0 $packageName"))
+                    val process = Runtime.getRuntime().exec(arrayOf("su", "-c", fullCommand))
                     output = process.inputStream.bufferedReader().use { it.readText() }
                     error = process.errorStream.bufferedReader().use { it.readText() }
                     process.waitFor()
@@ -671,7 +553,9 @@ private fun disablePackage(context: Context, packageName: String, accessMethod: 
             success = false
         }
         Handler(Looper.getMainLooper()).post {
-            val message = if (success) "Aplikasi berhasil dinonaktifkan" else error.trim().ifEmpty { output.trim() }.ifEmpty { "Gagal mematikan aplikasi" }
+            val successMessage = if (enable) "Aplikasi berhasil diaktifkan" else "Aplikasi berhasil dinonaktifkan"
+            val failMessage = if (enable) "Gagal mengaktifkan aplikasi" else "Gagal mematikan aplikasi"
+            val message = if (success) successMessage else error.trim().ifEmpty { output.trim() }.ifEmpty { failMessage }
             Toast.makeText(context, message.take(300), Toast.LENGTH_LONG).show()
             onResult(success)
         }
@@ -708,21 +592,17 @@ private fun AppItem(app: AppInfo, disabled: Boolean, selected: Boolean, selectio
     Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
         Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             
-            // Bikin state buat nampung gambar kalau proses di background udah kelar
-            var iconBitmap by remember(app.packageName) { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
+            var iconBitmap by remember(app.packageName) { mutableStateOf<ImageBitmap?>(null) }
 
-            // Lempar proses berat toBitmap ke Dispatchers.IO (Background Thread)
             LaunchedEffect(app.packageName) {
-                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                withContext(Dispatchers.IO) {
                     val drawable = app.icon
                     val w = if (drawable.intrinsicWidth > 0) drawable.intrinsicWidth else 144
                     val h = if (drawable.intrinsicHeight > 0) drawable.intrinsicHeight else 144
-                    val bmp = drawable.toBitmap(width = w, height = h).asImageBitmap()
-                    iconBitmap = bmp
+                    iconBitmap = drawable.toBitmap(width = w, height = h).asImageBitmap()
                 }
             }
 
-            // Tampilin kotak abu-abu sebagai placeholder kalau bitmap lagi dimasak di background
             if (iconBitmap != null) {
                 Image(
                     bitmap = iconBitmap!!,
@@ -733,10 +613,7 @@ private fun AppItem(app: AppInfo, disabled: Boolean, selected: Boolean, selectio
                 Box(
                     modifier = Modifier
                         .size(36.dp)
-                        .background(
-                            MaterialTheme.colorScheme.surfaceVariant, 
-                            RoundedCornerShape(8.dp)
-                        )
+                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
                 )
             }
 

@@ -11,32 +11,14 @@ import java.lang.reflect.Method
 
 object PackageManagerAction {
 
-    /*
-     * ==========================================
-     * DISABLE SATU APLIKASI
-     * ==========================================
-     */
-
     fun disable(
         context: Context,
         packageName: String,
         accessMethod: AccessMethod,
         onResult: (Boolean) -> Unit
     ) {
-        execute(
-            context = context,
-            command =
-                "pm disable-user --user 0 $packageName",
-            accessMethod = accessMethod,
-            onResult = onResult
-        )
+        execute(context, "pm disable-user --user 0 $packageName", accessMethod, onResult)
     }
-
-    /*
-     * ==========================================
-     * DISABLE BANYAK APLIKASI
-     * ==========================================
-     */
 
     fun disableMultiple(
         context: Context,
@@ -44,25 +26,14 @@ object PackageManagerAction {
         accessMethod: AccessMethod,
         onComplete: (Int, Int) -> Unit
     ) {
-
         executeMultiple(
             context = context,
             apps = apps,
             accessMethod = accessMethod,
-
-            commandBuilder = { app ->
-                "pm disable-user --user 0 ${app.packageName}"
-            },
-
+            commandBuilder = { "pm disable-user --user 0 ${it.packageName}" },
             onComplete = onComplete
         )
     }
-
-    /*
-     * ==========================================
-     * UNINSTALL SATU APLIKASI
-     * ==========================================
-     */
 
     fun uninstall(
         context: Context,
@@ -70,33 +41,13 @@ object PackageManagerAction {
         accessMethod: AccessMethod,
         onResult: (Boolean) -> Unit
     ) {
-
-        execute(
-            context = context,
-
-            command =
-                "pm uninstall --user 0 ${app.packageName}",
-
-            accessMethod = accessMethod
-        ) { success ->
-
+        execute(context, "pm uninstall --user 0 ${app.packageName}", accessMethod) { success ->
             if (success) {
-
-                DeletedAppStorage.saveApp(
-                    context = context,
-                    app = app
-                )
+                DeletedAppStorage.saveApp(context, app)
             }
-
             onResult(success)
         }
     }
-
-    /*
-     * ==========================================
-     * UNINSTALL BANYAK APLIKASI
-     * ==========================================
-     */
 
     fun uninstallMultiple(
         context: Context,
@@ -104,101 +55,15 @@ object PackageManagerAction {
         accessMethod: AccessMethod,
         onComplete: (Int, Int) -> Unit
     ) {
-
         executeMultiple(
             context = context,
             apps = apps,
             accessMethod = accessMethod,
-
-            commandBuilder = { app ->
-                "pm uninstall --user 0 ${app.packageName}"
-            },
-
+            commandBuilder = { "pm uninstall --user 0 ${it.packageName}" },
             onComplete = onComplete,
-
-            onSuccess = { app ->
-
-                DeletedAppStorage.saveApp(
-                    context = context,
-                    app = app
-                )
-            }
+            onSuccess = { DeletedAppStorage.saveApp(context, it) }
         )
     }
-
-    /*
-     * ==========================================
-     * EXECUTE SATU PERINTAH
-     * ==========================================
-     */
-
-    private fun execute(
-        context: Context,
-        command: String,
-        accessMethod: AccessMethod,
-        onResult: (Boolean) -> Unit
-    ) {
-
-        Thread {
-
-            val result =
-                runCommand(
-                    command = command,
-                    accessMethod = accessMethod
-                )
-
-            val message =
-                if (result.success) {
-
-                    "Perintah berhasil\n" +
-                        result.output.trim()
-
-                } else {
-
-                    val reason =
-                        result.error
-                            .trim()
-                            .ifEmpty {
-                                result.output.trim()
-                            }
-
-                    if (reason.isEmpty()) {
-                        "Perintah gagal dijalankan"
-                    } else {
-                        reason.take(300)
-                    }
-                }
-
-            Handler(
-                Looper.getMainLooper()
-            ).post {
-
-                Toast.makeText(
-                    context,
-                    message,
-                    Toast.LENGTH_LONG
-                ).show()
-
-                onResult(
-                    result.success
-                )
-            }
-
-        }.start()
-    }
-    
-    /*
-    * ==========================================
-    * RESTORE SATU APLIKASI
-    * ==========================================
-    *
-    * Mengembalikan aplikasi yang sebelumnya
-    * di-uninstall untuk user 0.
-    *
-    * APK sistem tidak di-install ulang dari file.
-    * Android hanya mengaktifkan kembali package
-    * yang masih tersedia di partisi sistem.
-    */
 
     fun restore(
         context: Context,
@@ -206,42 +71,35 @@ object PackageManagerAction {
         accessMethod: AccessMethod,
         onResult: (Boolean) -> Unit
     ) {
-
-        execute(
-            context = context,
-
-            command =
-                "cmd package install-existing --user 0 ${app.packageName}",
-
-            accessMethod = accessMethod
-        ) { success ->
-
+        execute(context, "cmd package install-existing --user 0 ${app.packageName}", accessMethod) { success ->
             if (success) {
-
-                DeletedAppStorage.removeApp(
-                    context = context,
-                    packageName = app.packageName
-                )
+                DeletedAppStorage.removeApp(context, app.packageName)
             }
-
             onResult(success)
         }
     }
 
-    /*
-     * ==========================================
-     * EXECUTE BANYAK PERINTAH
-     * ==========================================
-     *
-     * Aplikasi dijalankan satu per satu.
-     *
-     * Tidak dijalankan secara paralel agar:
-     *
-     * 1. Shizuku tidak dibanjiri proses.
-     * 2. Hasil tiap aplikasi bisa diketahui.
-     * 3. Kalau satu gagal, aplikasi berikutnya
-     *    tetap dicoba.
-     */
+    private fun execute(
+        context: Context,
+        command: String,
+        accessMethod: AccessMethod,
+        onResult: (Boolean) -> Unit
+    ) {
+        Thread {
+            val result = runCommand(command, accessMethod)
+            val message = if (result.success) {
+                "Perintah berhasil\n" + result.output.trim()
+            } else {
+                val reason = result.error.trim().ifEmpty { result.output.trim() }
+                if (reason.isEmpty()) "Perintah gagal dijalankan" else reason.take(300)
+            }
+
+            Handler(Looper.getMainLooper()).post {
+                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                onResult(result.success)
+            }
+        }.start()
+    }
 
     private fun executeMultiple(
         context: Context,
@@ -251,219 +109,85 @@ object PackageManagerAction {
         onComplete: (Int, Int) -> Unit,
         onSuccess: ((AppInfo) -> Unit)? = null
     ) {
-
         Thread {
-
             var successCount = 0
             var failedCount = 0
 
             apps.forEach { app ->
-
-                val result =
-                    runCommand(
-                        command =
-                            commandBuilder(app),
-
-                        accessMethod =
-                            accessMethod
-                    )
-
+                val result = runCommand(commandBuilder(app), accessMethod)
                 if (result.success) {
-
                     successCount++
-
                     onSuccess?.invoke(app)
-
                 } else {
-
                     failedCount++
                 }
             }
 
-            val finalSuccessCount =
-                successCount
+            val finalSuccess = successCount
+            val finalFailed = failedCount
 
-            val finalFailedCount =
-                failedCount
-
-            Handler(
-                Looper.getMainLooper()
-            ).post {
-
-                Toast.makeText(
-                    context,
-                    "Berhasil: $finalSuccessCount | " +
-                        "Gagal: $finalFailedCount",
-                    Toast.LENGTH_LONG
-                ).show()
-
-                onComplete(
-                    finalSuccessCount,
-                    finalFailedCount
-                )
+            Handler(Looper.getMainLooper()).post {
+                Toast.makeText(context, "Berhasil: $finalSuccess | Gagal: $finalFailed", Toast.LENGTH_LONG).show()
+                onComplete(finalSuccess, finalFailed)
             }
-
         }.start()
     }
-
-    /*
-     * ==========================================
-     * LOW LEVEL COMMAND EXECUTOR
-     * ==========================================
-     */
 
     private fun runCommand(
         command: String,
         accessMethod: AccessMethod
     ): CommandResult {
-
         var success = false
         var output = ""
         var error = ""
 
         try {
-
             when (accessMethod) {
-
-                /*
-                 * ==================================
-                 * ADB / SHIZUKU
-                 * ==================================
-                 */
-
                 AccessMethod.ADB -> {
-
                     if (!Shizuku.pingBinder()) {
-
-                        error =
-                            "Shizuku tidak aktif"
-
-                    } else if (
-                        Shizuku.checkSelfPermission() !=
-                        PackageManager.PERMISSION_GRANTED
-                    ) {
-
-                        error =
-                            "Permission Shizuku belum diberikan"
-
+                        error = "Shizuku tidak aktif"
+                    } else if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
+                        error = "Izin Shizuku belum diberikan"
                     } else {
+                        val shizukuClass = Class.forName("rikka.shizuku.Shizuku")
+                        val newProcessMethod: Method = shizukuClass.getDeclaredMethod(
+                            "newProcess",
+                            Array<String>::class.java,
+                            Array<String>::class.java,
+                            String::class.java
+                        )
+                        newProcessMethod.isAccessible = true
 
-                        val shizukuClass =
-                            Class.forName(
-                                "rikka.shizuku.Shizuku"
-                            )
+                        val process = newProcessMethod.invoke(
+                            null,
+                            arrayOf("sh", "-c", command),
+                            null,
+                            null
+                        ) as ShizukuRemoteProcess
 
-                        val newProcessMethod:
-                            Method =
-                            shizukuClass.getDeclaredMethod(
-                                "newProcess",
-                                Array<String>::class.java,
-                                Array<String>::class.java,
-                                String::class.java
-                            )
-
-                        newProcessMethod.isAccessible =
-                            true
-
-                        val process =
-                            newProcessMethod.invoke(
-                                null,
-
-                                arrayOf(
-                                    "sh",
-                                    "-c",
-                                    command
-                                ),
-
-                                null,
-                                null
-
-                            ) as ShizukuRemoteProcess
-
-                        output =
-                            process.inputStream
-                                .bufferedReader()
-                                .use {
-                                    it.readText()
-                                }
-
-                        error =
-                            process.errorStream
-                                .bufferedReader()
-                                .use {
-                                    it.readText()
-                                }
-
+                        output = process.inputStream.bufferedReader().use { it.readText() }
+                        error = process.errorStream.bufferedReader().use { it.readText() }
                         process.waitFor()
-
-                        success =
-                            process.exitValue() == 0
-
+                        success = process.exitValue() == 0
                         process.destroy()
                     }
                 }
-
-                /*
-                 * ==================================
-                 * ROOT
-                 * ==================================
-                 */
-
                 AccessMethod.ROOT -> {
-
-                    val process =
-                        Runtime.getRuntime().exec(
-                            arrayOf(
-                                "su",
-                                "-c",
-                                command
-                            )
-                        )
-
-                    output =
-                        process.inputStream
-                            .bufferedReader()
-                            .use {
-                                it.readText()
-                            }
-
-                    error =
-                        process.errorStream
-                            .bufferedReader()
-                            .use {
-                                it.readText()
-                            }
-
+                    val process = Runtime.getRuntime().exec(arrayOf("su", "-c", command))
+                    output = process.inputStream.bufferedReader().use { it.readText() }
+                    error = process.errorStream.bufferedReader().use { it.readText() }
                     process.waitFor()
-
-                    success =
-                        process.exitValue() == 0
-
+                    success = process.exitValue() == 0
                     process.destroy()
                 }
             }
-
         } catch (exception: Exception) {
-
-            error =
-                exception.message
-                    ?: exception.javaClass.simpleName
-
+            error = exception.message ?: exception.javaClass.simpleName
             success = false
         }
 
-        return CommandResult(
-            success = success,
-            output = output,
-            error = error
-        )
+        return CommandResult(success, output, error)
     }
-
-    /*
-     * ==========================================
-     * COMMAND RESULT
-     * ==========================================
-     */
 
     private data class CommandResult(
         val success: Boolean,
