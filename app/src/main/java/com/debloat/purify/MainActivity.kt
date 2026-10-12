@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -43,6 +44,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -51,8 +53,12 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import rikka.shizuku.Shizuku
@@ -101,6 +107,8 @@ fun PurifyApp(
 ) {
     val context = LocalContext.current
     val preferences = remember { context.getSharedPreferences("purify_preferences", Context.MODE_PRIVATE) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val coroutineScope = rememberCoroutineScope()
 
     var selectedMethod by remember {
         mutableStateOf(
@@ -122,6 +130,9 @@ fun PurifyApp(
         )
     }
     var shizukuDialogMessage by remember { mutableStateOf("") }
+    
+    var lostAccessMethod by remember { mutableStateOf<AccessMethod?>(null) }
+    
     val currentSelectedMethod by rememberUpdatedState(selectedMethod)
 
     fun updateAppDisabled(packageName: String) {
@@ -134,13 +145,40 @@ fun PurifyApp(
         AppListStorage.saveApps(context = context, apps = apps)
     }
 
-    // Listener otomatis dari Shizuku, gak perlu lagi pake while(true) nguras baterai
+    // Deteksi pencabutan izin saat user kembali ke Purify (ON_RESUME)
+    DisposableEffect(lifecycleOwner, selectedMethod) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME && selectedMethod != null) {
+                coroutineScope.launch(Dispatchers.IO) {
+                    val stillHasAccess = when (selectedMethod) {
+                        AccessMethod.ADB -> {
+                            try { ShizukuManager.isRunning() && ShizukuManager.hasPermission() } catch (_: Exception) { false }
+                        }
+                        AccessMethod.ROOT -> {
+                            checkRootAccess()
+                        }
+                        else -> true
+                    }
+                    if (!stillHasAccess) {
+                        withContext(Dispatchers.Main) {
+                            showShizukuDialog = false
+                            lostAccessMethod = selectedMethod
+                        }
+                    }
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     DisposableEffect(Unit) {
         val permissionListener = Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
             if (requestCode == ShizukuManager.REQUEST_CODE) {
                 if (grantResult == PackageManager.PERMISSION_GRANTED) {
                     shizukuPermissionGranted = true
                     showShizukuDialog = false
+                    lostAccessMethod = null
                 } else {
                     shizukuPermissionGranted = false
                     shizukuDialogMessage = "Izin Shizuku ditolak. Purify tidak dapat menggunakan akses ADB."
@@ -153,15 +191,15 @@ fun PurifyApp(
             shizukuPermissionGranted = try { ShizukuManager.hasPermission() } catch (_: Throwable) { false }
             if (currentSelectedMethod == AccessMethod.ADB && shizukuPermissionGranted) {
                 showShizukuDialog = false
+                lostAccessMethod = null
             }
         }
 
         val binderDeadListener = Shizuku.OnBinderDeadListener {
             shizukuPermissionGranted = false
+            showShizukuDialog = false
             if (currentSelectedMethod == AccessMethod.ADB) {
-                apps = emptyList()
-                shizukuDialogMessage = "Shizuku berhenti. Purify membutuhkan Shizuku untuk menggunakan akses ADB."
-                showShizukuDialog = true
+                lostAccessMethod = AccessMethod.ADB
             }
         }
 
@@ -182,12 +220,6 @@ fun PurifyApp(
 
     LaunchedEffect(usageAccessGranted) { showUsageAccessDialog = !usageAccessGranted }
 
-    LaunchedEffect(shizukuPermissionGranted) {
-        if (selectedMethod != AccessMethod.ADB || !shizukuPermissionGranted) return@LaunchedEffect
-        val cachedApps = withContext(Dispatchers.IO) { AppListStorage.loadApps(context) }
-        if (cachedApps.isNotEmpty()) apps = cachedApps
-    }
-
     var scanStatusIndex by remember { mutableStateOf(0) }
     val scanStatuses = listOf(
         "Mencari aplikasi terpasang",
@@ -207,12 +239,7 @@ fun PurifyApp(
         }
     }
 
-    LaunchedEffect(usageAccessGranted) {
-        if (!usageAccessGranted) return@LaunchedEffect
-        val cachedApps = withContext(Dispatchers.IO) { AppListStorage.loadApps(context) }
-        if (cachedApps.isNotEmpty()) apps = cachedApps
-    }
-
+    // Alur pemuatan cache dan pemindaian aplikasi
     LaunchedEffect(selectedMethod, usageAccessGranted, restoreRefreshKey) {
         if (!usageAccessGranted || selectedMethod == null) return@LaunchedEffect
 
@@ -232,7 +259,11 @@ fun PurifyApp(
             shizukuPermissionGranted = true
         }
 
-        if (AppListStorage.hasCache(context) && restoreRefreshKey == 0) return@LaunchedEffect
+        val cachedApps = withContext(Dispatchers.IO) { AppListStorage.loadApps(context) }
+        if (cachedApps.isNotEmpty() && restoreRefreshKey == 0) {
+            apps = cachedApps
+            return@LaunchedEffect
+        }
 
         isScanning = true
         val scannedApps = withContext(Dispatchers.IO) { scanApplications(context) }
@@ -264,11 +295,45 @@ fun PurifyApp(
                     onAppDisabled = { packageName -> updateAppDisabled(packageName) },
                     onAppUninstalled = { packageName -> removeAppLocally(packageName) },
                     onAppRestored = { restoreRefreshKey++ },
-                    onSettingsClick = { selectedMethod = null }
+                    onSettingsClick = { 
+                        preferences.edit().remove("access_method").apply()
+                        selectedMethod = null 
+                    }
+                )
+            }
+            lostAccessMethod != null -> {
+                SetupScreen(
+                    onMethodSelected = { method ->
+                        preferences.edit().putString("access_method", method.name).apply()
+                        selectedMethod = method
+                        lostAccessMethod = null
+                    }
                 )
             }
             else -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         }
+    }
+
+    if (lostAccessMethod != null) {
+        AlertDialog(
+            onDismissRequest = { },
+            icon = { Icon(imageVector = Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+            title = { Text(text = "Akses Terputus") },
+            text = { Text(text = "Izin ${lostAccessMethod?.name} telah dicabut dari sistem atau aplikasi kehilangan akses. Silakan pilih kembali metode akses.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        lostAccessMethod = null
+                        showShizukuDialog = false
+                        preferences.edit().remove("access_method").apply()
+                        selectedMethod = null
+                        apps = emptyList()
+                    }
+                ) {
+                    Text(text = "Ubah Metode")
+                }
+            }
+        )
     }
 
     if (showUsageAccessDialog && !usageAccessGranted) {
@@ -286,7 +351,7 @@ fun PurifyApp(
         )
     }
 
-    if (showShizukuDialog) {
+    if (showShizukuDialog && lostAccessMethod == null) {
         AlertDialog(
             onDismissRequest = { },
             icon = { Icon(imageVector = Icons.Default.Security, contentDescription = null) },
@@ -347,6 +412,16 @@ private fun ScanningScreen(status: String, accessMethod: AccessMethod?) {
     }
 }
 
+private fun checkRootAccess(): Boolean {
+    return try {
+        val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "id"))
+        process.waitFor()
+        process.exitValue() == 0
+    } catch (e: Exception) {
+        false
+    }
+}
+
 private fun hasUsageAccess(context: Context): Boolean {
     val appOpsManager = context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
     val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -358,15 +433,18 @@ private fun hasUsageAccess(context: Context): Boolean {
     return mode == AppOpsManager.MODE_ALLOWED
 }
 
-// FUNGSI SUPER CEPAT BUAT SCAN
 private fun scanApplications(context: Context): List<AppInfo> {
     val packageManager = context.packageManager
-    // Ambil full package info sekaligus, kaga pake ngeloop manggil getPackageInfo lagi
+    val myPackageName = context.packageName
     val installedPackages = packageManager.getInstalledPackages(PackageManager.GET_PERMISSIONS)
 
     return installedPackages.mapNotNull { packageInfo ->
         try {
             val applicationInfo = packageInfo.applicationInfo ?: return@mapNotNull null
+            
+            if (applicationInfo.packageName == myPackageName) {
+                return@mapNotNull null
+            }
             
             val requestedPermissions = packageInfo.requestedPermissions?.toList() ?: emptyList()
             val grantedPermissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

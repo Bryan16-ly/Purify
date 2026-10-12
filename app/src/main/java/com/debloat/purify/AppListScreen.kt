@@ -22,14 +22,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.core.graphics.drawable.toBitmap
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import rikka.shizuku.Shizuku
 import java.util.Locale
 
@@ -415,7 +411,6 @@ fun AppListScreen(
                                         if (success) {
                                             selectedApp = null
                                             if (isEnabling) {
-                                                // Kalau di enable, cache gak berubah di callback, cuma ubah list
                                                 val updatedApps = apps.map { if (it.packageName == app.packageName) it.copy(isEnabled = true) else it }
                                                 AppListStorage.saveApps(context, updatedApps)
                                             } else {
@@ -505,7 +500,6 @@ fun AppListScreen(
     }
 }
 
-// Fungsi sakti buat nyatuin logic enable & disable
 private fun changePackageState(
     context: Context,
     packageName: String,
@@ -588,24 +582,49 @@ private fun formatFileSize(size: Long): String {
 }
 
 @Composable
-private fun AppItem(app: AppInfo, disabled: Boolean, selected: Boolean, selectionMode: Boolean, onClick: () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
-        Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+private fun AppItem(
+    app: AppInfo, 
+    disabled: Boolean, 
+    selected: Boolean, 
+    selectionMode: Boolean, 
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             
-            var iconBitmap by remember(app.packageName) { mutableStateOf<ImageBitmap?>(null) }
-
-            LaunchedEffect(app.packageName) {
-                withContext(Dispatchers.IO) {
+            val cachedBitmap = remember<androidx.compose.ui.graphics.ImageBitmap?>(app.packageName) {
+                try {
                     val drawable = app.icon
-                    val w = if (drawable.intrinsicWidth > 0) drawable.intrinsicWidth else 144
-                    val h = if (drawable.intrinsicHeight > 0) drawable.intrinsicHeight else 144
-                    iconBitmap = drawable.toBitmap(width = w, height = h).asImageBitmap()
+                    val width = if (drawable.intrinsicWidth > 0) drawable.intrinsicWidth else 96
+                    val height = if (drawable.intrinsicHeight > 0) drawable.intrinsicHeight else 96
+                    
+                    val bitmap = android.graphics.Bitmap.createBitmap(
+                        width, 
+                        height, 
+                        android.graphics.Bitmap.Config.ARGB_8888
+                    )
+                    val canvas = android.graphics.Canvas(bitmap)
+                    drawable.setBounds(0, 0, canvas.width, canvas.height)
+                    drawable.draw(canvas)
+                    
+                    bitmap.asImageBitmap()
+                } catch (_: Exception) {
+                    null
                 }
             }
 
-            if (iconBitmap != null) {
+            if (cachedBitmap != null) {
                 Image(
-                    bitmap = iconBitmap!!,
+                    bitmap = cachedBitmap,
                     contentDescription = "Ikon ${app.appName}",
                     modifier = Modifier.size(36.dp)
                 )
@@ -613,24 +632,44 @@ private fun AppItem(app: AppInfo, disabled: Boolean, selected: Boolean, selectio
                 Box(
                     modifier = Modifier
                         .size(36.dp)
-                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
+                        .background(
+                            MaterialTheme.colorScheme.surfaceVariant, 
+                            RoundedCornerShape(8.dp)
+                        )
                 )
             }
 
             Spacer(modifier = Modifier.width(12.dp))
+            
             Column(modifier = Modifier.weight(1f)) {
-                Text(text = app.appName, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    text = app.appName, 
+                    style = MaterialTheme.typography.titleMedium
+                )
                 Spacer(modifier = Modifier.height(4.dp))
-                Text(text = app.packageName, style = MaterialTheme.typography.bodySmall)
+                Text(
+                    text = app.packageName, 
+                    style = MaterialTheme.typography.bodySmall
+                )
                 Spacer(modifier = Modifier.height(6.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(text = if (app.isSystemApp) "SISTEM" else "PENGGUNA", style = MaterialTheme.typography.labelMedium)
+                    Text(
+                        text = if (app.isSystemApp) "SISTEM" else "PENGGUNA", 
+                        style = MaterialTheme.typography.labelMedium
+                    )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = if (disabled) "NONAKTIF" else "AKTIF", style = MaterialTheme.typography.labelMedium)
+                    Text(
+                        text = if (disabled) "NONAKTIF" else "AKTIF", 
+                        style = MaterialTheme.typography.labelMedium
+                    )
                 }
             }
+            
             if (selectionMode) {
-                Checkbox(checked = selected, onCheckedChange = { onClick() })
+                Checkbox(
+                    checked = selected, 
+                    onCheckedChange = { onClick() }
+                )
             }
         }
     }
