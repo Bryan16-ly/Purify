@@ -51,7 +51,8 @@ fun AppListScreen(
     onAppDisabled: (String) -> Unit,
     onAppUninstalled: (String) -> Unit,
     onAppRestored: () -> Unit,
-    onSettingsClick: () -> Unit
+    onSettingsClick: () -> Unit,
+    onRefreshClick: () -> Unit = onAppRestored
 ) {
     val context = LocalContext.current
     val prefs = remember(context) { context.getSharedPreferences("purify_preferences", Context.MODE_PRIVATE) }
@@ -298,6 +299,21 @@ fun AppListScreen(
                         )
                     }
 
+                    // Tombol Refresh/Memuat Ulang
+                    IconButton(
+                        onClick = {
+                            displayApps = AppListStorage.loadDisplayApps(context)
+                            onRefreshClick()
+                            Toast.makeText(context, "Memperbarui daftar aplikasi...", Toast.LENGTH_SHORT).show()
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Muat Ulang / Refresh"
+                        )
+                    }
+
+                    // Tombol Tandai Massal
                     IconButton(onClick = { selectionMode = true; selectedPackages = emptySet() }) {
                         Icon(imageVector = Icons.Default.Checklist, contentDescription = "Mode Tandai")
                     }

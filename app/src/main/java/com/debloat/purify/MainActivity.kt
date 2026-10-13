@@ -323,6 +323,7 @@ fun PurifyApp(
                     onAppDisabled = { packageName -> updateAppDisabled(packageName) },
                     onAppUninstalled = { packageName -> removeAppLocally(packageName) },
                     onAppRestored = { restoreRefreshKey++ },
+                    onRefreshClick = { restoreRefreshKey++ },
                     onSettingsClick = { 
                         preferences.edit().remove("access_method").apply()
                         selectedMethod = null 
