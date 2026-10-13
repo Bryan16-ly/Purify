@@ -3,64 +3,64 @@
  * Copyright (c) 2026 Achmad Riyan Sholihin (Bryan16-ly)
  *
  * Licensed under the MIT License.
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files.
  */
 
 package com.debloat.purify
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
+import android.net.Uri
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import rikka.shizuku.Shizuku
-import java.util.Locale
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppListScreen(
     apps: List<AppInfo>,
     accessMethod: AccessMethod,
-    darkTheme: Boolean,
-    onThemeChanged: (Boolean) -> Unit,
+    themeMode: String,
+    onThemeChanged: (String) -> Unit,
     onAppDisabled: (String) -> Unit,
     onAppUninstalled: (String) -> Unit,
     onAppRestored: () -> Unit,
     onSettingsClick: () -> Unit
 ) {
     val context = LocalContext.current
+    val prefs = remember(context) { context.getSharedPreferences("purify_preferences", Context.MODE_PRIVATE) }
 
-    // Pengambilan versi aplikasi secara dinamis dari konfigurasi build
+    // State Keburaman & Ketebalan Kaca untuk Liquid Glass
+    var bgBlurDp by remember { mutableFloatStateOf(prefs.getFloat("glass_bg_blur", 28f)) }
+    var cardAlpha by remember { mutableFloatStateOf(prefs.getFloat("glass_card_alpha", 0.40f)) }
+    var showBgInOtherThemes by remember { mutableStateOf(prefs.getBoolean("show_bg_in_other_themes", false)) }
+
     val appVersionName = remember(context) {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -83,10 +83,50 @@ fun AppListScreen(
         displayApps = AppListStorage.loadDisplayApps(context)
     }
 
+    // Gambar Latar Belakang Galeri
+    var customBgBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
+
+    fun refreshCustomBackground() {
+        try {
+            val bgFile = File(context.filesDir, "custom_background.jpg")
+            if (bgFile.exists()) {
+                val bitmap = BitmapFactory.decodeFile(bgFile.absolutePath)
+                customBgBitmap = bitmap?.asImageBitmap()
+            } else {
+                customBgBitmap = null
+            }
+        } catch (_: Exception) {
+            customBgBitmap = null
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        refreshCustomBackground()
+    }
+
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let { selectedUri ->
+            try {
+                context.contentResolver.openInputStream(selectedUri)?.use { inputStream ->
+                    File(context.filesDir, "custom_background.jpg").outputStream().use { outputStream ->
+                        inputStream.copyTo(outputStream)
+                    }
+                }
+                refreshCustomBackground()
+                Toast.makeText(context, "Gambar latar berhasil dipasang", Toast.LENGTH_SHORT).show()
+            } catch (_: Exception) {
+                Toast.makeText(context, "Gagal memuat gambar dari galeri", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
     var selectedApp by remember { mutableStateOf<AppInfo?>(null) }
     var selectedDeletedApp by remember { mutableStateOf<DeletedAppInfo?>(null) }
     var selectedFilter by remember { mutableStateOf("ALL") }
     var showSettings by remember { mutableStateOf(false) }
+    var showThemeDialog by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var showDisabledApps by remember { mutableStateOf(false) }
@@ -94,6 +134,7 @@ fun AppListScreen(
     var selectedPackages by remember { mutableStateOf<Set<String>>(emptySet()) }
 
     BackHandler(enabled = showAboutDialog) { showAboutDialog = false }
+    BackHandler(enabled = showThemeDialog) { showThemeDialog = false }
 
     BackHandler(enabled = selectionMode) {
         selectionMode = false
@@ -112,13 +153,13 @@ fun AppListScreen(
         selectedFilter = "ALL"
     }
 
-    val installedDisplayApps = displayApps.filter { it.appInfo != null }
-    val activeApps = installedDisplayApps.mapNotNull { it.appInfo }.filter { it.isEnabled }
-    val disabledApps = installedDisplayApps.mapNotNull { it.appInfo }.filter { !it.isEnabled }
-    val deletedApps = displayApps.filter { it.status == AppStatus.DELETED }.mapNotNull { it.deletedAppInfo }
+    val installedDisplayApps = remember(displayApps) { displayApps.filter { it.appInfo != null } }
+    val activeApps = remember(installedDisplayApps) { installedDisplayApps.mapNotNull { it.appInfo }.filter { it.isEnabled } }
+    val disabledApps = remember(installedDisplayApps) { installedDisplayApps.mapNotNull { it.appInfo }.filter { !it.isEnabled } }
+    val deletedApps = remember(displayApps) { displayApps.filter { it.status == AppStatus.DELETED }.mapNotNull { it.deletedAppInfo } }
     val currentInstalledApps = if (showDisabledApps) disabledApps else activeApps
 
-    val filteredInstalledApps = remember(currentInstalledApps, selectedFilter, searchQuery, showDisabledApps) {
+    val filteredInstalledApps = remember(currentInstalledApps, selectedFilter, searchQuery) {
         currentInstalledApps
             .filter { app ->
                 when (selectedFilter) {
@@ -147,755 +188,440 @@ fun AppListScreen(
         }
     }
 
-    val allVisibleSelected = filteredInstalledApps.isNotEmpty() && filteredInstalledApps.all { it.packageName in selectedPackages }
+    val allVisibleSelected = remember(filteredInstalledApps, selectedPackages) {
+        filteredInstalledApps.isNotEmpty() && filteredInstalledApps.all { it.packageName in selectedPackages }
+    }
 
-    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
-        
-        // Header Atas
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (selectionMode) {
-                IconButton(onClick = { selectionMode = false; selectedPackages = emptySet() }) {
-                    Icon(imageVector = Icons.Default.ArrowBack, contentDescription = "Batal memilih")
-                }
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Pilih Aplikasi",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "${selectedPackages.size} dipilih",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                TextButton(
-                    onClick = {
-                        selectedPackages = if (allVisibleSelected) {
-                            selectedPackages - filteredInstalledApps.map { it.packageName }.toSet()
-                        } else {
-                            selectedPackages + filteredInstalledApps.map { it.packageName }.toSet()
-                        }
-                    }
-                ) {
-                    Text(text = if (allVisibleSelected) "Batal" else "Semua")
-                }
-            } else {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = if (showDisabledApps) "Aplikasi Nonaktif" else "Aplikasi",
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = if (showDisabledApps) "Total: ${disabledApps.size + deletedApps.size}" 
-                               else "Aktif: ${activeApps.size}  •  Pengguna: ${activeApps.count { !it.isSystemApp }}  •  Sistem: ${activeApps.count { it.isSystemApp }}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+    val isGlass = themeMode == "GLASS"
 
-                IconButton(onClick = { selectionMode = true; selectedPackages = emptySet() }) {
-                    Icon(imageVector = Icons.Default.Checklist, contentDescription = "Mode Tandai")
-                }
-
-                Box {
-                    IconButton(onClick = { showSettings = true }) {
-                        Icon(imageVector = Icons.Default.Settings, contentDescription = "Pengaturan")
-                    }
-
-                    DropdownMenu(
-                        expanded = showSettings,
-                        onDismissRequest = { showSettings = false },
-                        modifier = Modifier.width(230.dp)
-                    ) {
-                        DropdownMenuItem(
-                            text = {
-                                Column {
-                                    Text("Ubah metode akses", style = MaterialTheme.typography.bodyLarge)
-                                    Text("Saat ini: ${accessMethod.name}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            },
-                            onClick = {
-                                showSettings = false
-                                onSettingsClick()
-                            }
-                        )
-                        HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
-                        DropdownMenuItem(
-                            text = {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text("Tema gelap", style = MaterialTheme.typography.bodyLarge)
-                                    Switch(
-                                        checked = darkTheme,
-                                        onCheckedChange = { enabled ->
-                                            onThemeChanged(enabled)
-                                        },
-                                        modifier = Modifier.padding(start = 8.dp)
-                                    )
-                                }
-                            },
-                            onClick = {
-                                onThemeChanged(!darkTheme)
-                            }
-                        )
-                        HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
-                        DropdownMenuItem(
-                            text = {
-                                Column {
-                                    Text("Tentang Purify", style = MaterialTheme.typography.bodyLarge)
-                                    Text("Informasi aplikasi & lisensi", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            },
-                            onClick = {
-                                showSettings = false
-                                showAboutDialog = true
-                            }
-                        )
-                    }
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Search Bar
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = { searchQuery = it },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp),
-            shape = RoundedCornerShape(26.dp),
-            singleLine = true,
-            placeholder = { Text(text = "Cari nama atau paket aplikasi...", style = MaterialTheme.typography.bodyMedium) },
-            leadingIcon = { Icon(imageVector = Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
-            trailingIcon = {
-                if (searchQuery.isNotEmpty()) {
-                    IconButton(onClick = { searchQuery = "" }) {
-                        Icon(imageVector = Icons.Default.Close, contentDescription = "Hapus teks")
-                    }
-                }
-            },
-            colors = OutlinedTextFieldDefaults.colors(
-                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.5f),
-                focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                unfocusedBorderColor = Color.Transparent,
-                focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+    val glassRimBorder = BorderStroke(
+        width = 1.2.dp,
+        brush = Brush.verticalGradient(
+            colors = listOf(
+                Color.White.copy(alpha = 0.55f),
+                Color.White.copy(alpha = 0.15f),
+                Color.White.copy(alpha = 0.05f)
             )
         )
+    )
 
-        Spacer(modifier = Modifier.height(10.dp))
+    val dialogContainerColor = if (isGlass) Color(0xF2161622) else MaterialTheme.colorScheme.surfaceContainerHigh
+    val dialogGlassBorder = if (isGlass) glassRimBorder else null
 
-        // Filter Bar
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            FilterChip(
-                selected = !showDisabledApps,
-                onClick = { showDisabledApps = false; selectedFilter = "ALL" },
-                label = { Text("Aktif (${activeApps.size})") }
-            )
-            FilterChip(
-                selected = showDisabledApps,
-                onClick = { showDisabledApps = true; selectedFilter = "ALL" },
-                label = { Text("Nonaktif (${disabledApps.size + deletedApps.size})") }
-            )
-            Spacer(modifier = Modifier.weight(1f))
-            FilterChip(
-                selected = selectedFilter == "USER",
-                onClick = { selectedFilter = if (selectedFilter == "USER") "ALL" else "USER" },
-                label = { Text("Pengguna") }
-            )
-            FilterChip(
-                selected = selectedFilter == "SYSTEM",
-                onClick = { selectedFilter = if (selectedFilter == "SYSTEM") "ALL" else "SYSTEM" },
-                label = { Text("Sistem") }
-            )
-        }
+    // Kondisi kapan wallpaper galeri ditampilkan (Secara default HANYA di mode Liquid Glass)
+    val shouldShowCustomBg = customBgBitmap != null && (isGlass || showBgInOtherThemes)
 
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // List Aplikasi
-        LazyColumn(
-            modifier = Modifier.fillMaxWidth().weight(1f),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            contentPadding = PaddingValues(vertical = 4.dp)
-        ) {
-            items(items = filteredInstalledApps, key = { "installed_" + it.packageName }) { app ->
-                AppItem(
-                    app = app,
-                    disabled = !app.isEnabled,
-                    selected = app.packageName in selectedPackages,
-                    selectionMode = selectionMode,
-                    onClick = {
-                        if (selectionMode) {
-                            selectedPackages = if (app.packageName in selectedPackages) selectedPackages - app.packageName else selectedPackages + app.packageName
-                        } else {
-                            selectedApp = app
-                        }
-                    }
-                )
-            }
-            if (showDisabledApps) {
-                items(items = filteredDeletedApps, key = { "deleted_" + it.packageName }) { app ->
-                    DeletedAppItem(app = app, onClick = { selectedDeletedApp = app })
-                }
-            }
-        }
-
-        // Action bar saat selection mode
-        if (selectionMode && !showDisabledApps) {
-            Spacer(modifier = Modifier.height(10.dp))
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    onClick = {
-                        val selectedApps = filteredInstalledApps.filter { it.packageName in selectedPackages }
-                        if (selectedApps.isNotEmpty()) {
-                            PackageManagerAction.disableMultiple(context, selectedApps, accessMethod) { successCount, _ ->
-                                selectionMode = false
-                                selectedPackages = emptySet()
-                                if (successCount == selectedApps.size) {
-                                    selectedApps.forEach { onAppDisabled(it.packageName) }
-                                    displayApps = AppListStorage.loadDisplayApps(context)
-                                }
-                            }
-                        }
-                    },
-                    enabled = selectedPackages.isNotEmpty(),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text(text = "Nonaktifkan (${selectedPackages.size})")
-                }
-
-                Button(
-                    onClick = {
-                        val selectedApps = filteredInstalledApps.filter { it.packageName in selectedPackages }
-                        if (selectedApps.isNotEmpty()) {
-                            PackageManagerAction.uninstallMultiple(context, selectedApps, accessMethod) { successCount, _ ->
-                                selectionMode = false
-                                selectedPackages = emptySet()
-                                if (successCount == selectedApps.size) {
-                                    selectedApps.forEach { onAppUninstalled(it.packageName) }
-                                    displayApps = AppListStorage.loadDisplayApps(context)
-                                }
-                            }
-                        }
-                    },
-                    enabled = selectedPackages.isNotEmpty(),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text(text = "Hapus (${selectedPackages.size})")
-                }
-            }
-        }
-    }
-
-    // Pop-up Dialog Tentang Purify & Lisensi
-    if (showAboutDialog) {
-        AlertDialog(
-            onDismissRequest = { showAboutDialog = false },
-            icon = {
-                Icon(
-                    imageVector = Icons.Default.Info,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            },
-            title = {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "Purify",
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "v$appVersionName",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            },
-            text = {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 380.dp)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Text(
-                        text = "Pengelola aplikasi dan paket Android.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Medium
-                    )
-
-                    HorizontalDivider(thickness = 0.5.dp)
-
-                    Text(
-                        text = "Fitur Utama",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-
-                    val features = listOf(
-                        "Melihat aplikasi pengguna dan aplikasi sistem secara terpisah.",
-                        "Mengaktifkan atau menonaktifkan aplikasi sistem/pengguna.",
-                        "Menghapus paket dan memulihkan paket yang tercatat sebagai terhapus.",
-                        "Melihat detail aplikasi lengkap (versi, SDK, ukuran penyimpanan, pemasang, dan izin).",
-                        "Mengelola beberapa aplikasi sekaligus (pemberhentian/penghapusan massal)."
-                    )
-
-                    features.forEach { feature ->
-                        Row(modifier = Modifier.fillMaxWidth()) {
-                            Text(
-                                text = "• ",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = feature,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
-
-                    HorizontalDivider(thickness = 0.5.dp)
-
-                    Text(
-                        text = "Pengembang & Hak Cipta",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = "Copyright (c) 2026 Achmad Riyan Sholihin (Bryan16-ly)",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.SemiBold
-                    )
-
-                    HorizontalDivider(thickness = 0.5.dp)
-
-                    Text(
-                        text = "Lisensi",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = "MIT License\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files, to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software.\n\nThe above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showAboutDialog = false }) {
-                    Text("Tutup")
-                }
-            }
-        )
-    }
-
-    // Detail Pop-up untuk Aplikasi Terpasang
-    selectedApp?.let { app ->
-        Box(
-            modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)).pointerInput(Unit) {
-                detectTapGestures(onTap = { selectedApp = null })
-            }
-        ) {
-            Surface(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .fillMaxWidth(0.90f)
-                    .pointerInput(Unit) { detectTapGestures(onTap = {}) },
-                shape = RoundedCornerShape(24.dp),
-                tonalElevation = 6.dp,
-                shadowElevation = 10.dp
-            ) {
-                Column(modifier = Modifier.fillMaxWidth().padding(22.dp)) {
-                    Text(text = app.appName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = if (app.isEnabled) "Status: AKTIF" else "Status: NONAKTIF",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = if (app.isEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-                    )
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    AppInfoRow(title = "Nama Paket", value = app.packageName)
-                    AppInfoRow(title = "Versi", value = "${app.versionName} (${app.versionCode})")
-                    AppInfoRow(title = "Target / Min SDK", value = "${app.targetSdk} / ${app.minSdk}")
-                    AppInfoRow(title = "UID", value = app.uid.toString())
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Text(text = "Penyimpanan", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    AppInfoRow(title = "Aplikasi (APK)", value = formatFileSize(app.apkSize))
-                    AppInfoRow(title = "Data", value = formatFileSize(app.dataSize))
-                    AppInfoRow(title = "Cache", value = formatFileSize(app.cacheSize))
-                    AppInfoRow(title = "Total Ukuran", value = formatFileSize(app.totalSize))
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    AppInfoRow(title = "Pemasang", value = app.installer)
-                    if (accessMethod == AccessMethod.ROOT) {
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(text = "Lokasi APK", style = MaterialTheme.typography.labelMedium)
-                        Text(text = app.apkPath, style = MaterialTheme.typography.bodySmall)
-                    }
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Text(text = "Izin Aplikasi", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    if (app.requestedPermissions.isEmpty()) {
-                        Text(text = "Tidak ada izin yang diminta", style = MaterialTheme.typography.bodySmall)
-                    } else {
-                        Column(modifier = Modifier.fillMaxWidth().height(140.dp)) {
-                            LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                items(app.requestedPermissions) { permission ->
-                                    val granted = permission in app.grantedPermissions
-                                    val symbol = if (granted) "✓" else "○"
-                                    Text(
-                                        text = "$symbol ${permission.substringAfterLast('.')}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = if (granted) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(18.dp))
-
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        TextButton(onClick = { selectedApp = null }) {
-                            Text("Tutup")
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Button(
-                            onClick = {
-                                val isEnabling = !app.isEnabled
-                                changePackageState(context, app.packageName, accessMethod, isEnabling) { success ->
-                                    if (success) {
-                                        selectedApp = null
-                                        if (isEnabling) {
-                                            val updatedApps = apps.map { if (it.packageName == app.packageName) it.copy(isEnabled = true) else it }
-                                            AppListStorage.saveApps(context, updatedApps)
-                                        } else {
-                                            onAppDisabled(app.packageName)
-                                            val updatedApps = apps.map { if (it.packageName == app.packageName) it.copy(isEnabled = false) else it }
-                                            AppListStorage.saveApps(context, updatedApps)
-                                        }
-                                        displayApps = AppListStorage.loadDisplayApps(context)
-                                    }
-                                }
-                            }
-                        ) {
-                            Text(text = if (app.isEnabled) "Nonaktifkan" else "Aktifkan")
-                        }
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Button(
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                            onClick = {
-                                PackageManagerAction.uninstall(context, app, accessMethod) { success ->
-                                    if (success) {
-                                        selectedApp = null
-                                        onAppUninstalled(app.packageName)
-                                        displayApps = AppListStorage.loadDisplayApps(context)
-                                    }
-                                }
-                            }
-                        ) {
-                            Text(text = "Hapus")
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Detail Pop-up untuk Aplikasi Terhapus
-    selectedDeletedApp?.let { app ->
-        Box(
-            modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)).pointerInput(Unit) {
-                detectTapGestures(onTap = { selectedDeletedApp = null })
-            }
-        ) {
-            Surface(modifier = Modifier.align(Alignment.Center).fillMaxWidth(0.90f), shape = RoundedCornerShape(24.dp), tonalElevation = 6.dp) {
-                Column(modifier = Modifier.fillMaxWidth().padding(22.dp)) {
-                    Text(text = app.appName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(text = "Status: TERHAPUS (User 0)", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    AppInfoRow(title = "Nama Paket", value = app.packageName)
-                    AppInfoRow(title = "Versi", value = "${app.versionName} (${app.versionCode})")
-                    AppInfoRow(title = "Ukuran APK", value = formatFileSize(app.apkSize))
-                    AppInfoRow(title = "Lokasi APK", value = app.apkPath)
-                    Spacer(modifier = Modifier.height(18.dp))
-
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        TextButton(onClick = { selectedDeletedApp = null }) {
-                            Text("Batal")
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Button(
-                            onClick = {
-                                PackageManagerAction.restore(context, app, accessMethod) { success ->
-                                    if (success) {
-                                        selectedDeletedApp = null
-                                        onAppRestored()
-                                    }
-                                }
-                            }
-                        ) {
-                            Text(text = "Pulihkan")
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun AppItem(
-    app: AppInfo,
-    disabled: Boolean,
-    selected: Boolean,
-    selectionMode: Boolean,
-    onClick: () -> Unit
-) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.55f),
-        tonalElevation = 1.dp
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            val cachedBitmap = remember<androidx.compose.ui.graphics.ImageBitmap?>(app.packageName) {
-                try {
-                    val drawable = app.icon
-                    val width = if (drawable.intrinsicWidth > 0) drawable.intrinsicWidth else 96
-                    val height = if (drawable.intrinsicHeight > 0) drawable.intrinsicHeight else 96
-                    val bitmap = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
-                    val canvas = android.graphics.Canvas(bitmap)
-                    drawable.setBounds(0, 0, canvas.width, canvas.height)
-                    drawable.draw(canvas)
-                    bitmap.asImageBitmap()
-                } catch (_: Exception) { null }
-            }
-
-            if (cachedBitmap != null) {
-                Image(
-                    bitmap = cachedBitmap,
-                    contentDescription = app.appName,
-                    modifier = Modifier
-                        .size(42.dp)
-                        .clip(CircleShape)
-                )
+    Box(modifier = Modifier.fillMaxSize()) {
+        if (shouldShowCustomBg) {
+            val bgModifier = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && isGlass && bgBlurDp > 0f) {
+                Modifier.fillMaxSize().blur(bgBlurDp.dp)
             } else {
-                Box(
-                    modifier = Modifier
-                        .size(42.dp)
-                        .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
-                )
+                Modifier.fillMaxSize()
             }
-
-            Spacer(modifier = Modifier.width(14.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = app.appName,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = app.packageName,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            Spacer(modifier = Modifier.width(8.dp))
-
-            if (selectionMode) {
-                Checkbox(
-                    checked = selected,
-                    onCheckedChange = { onClick() }
-                )
-            } else {
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = if (disabled) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)
-                            else if (app.isSystemApp) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
-                            else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.35f)
-                ) {
-                    Text(
-                        text = if (disabled) "NONAKTIF" else if (app.isSystemApp) "SYSTEM" else "USER",
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = if (disabled) MaterialTheme.colorScheme.error
-                                else if (app.isSystemApp) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.secondary
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(6.dp))
-
-                Icon(
-                    imageVector = Icons.Default.ChevronRight,
-                    contentDescription = "Detail",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun DeletedAppItem(app: DeletedAppInfo, onClick: () -> Unit) {
-    Surface(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.4f)
-    ) {
-        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier.size(42.dp).background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f), CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(text = "×", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.error)
-            }
-            Spacer(modifier = Modifier.width(14.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(text = app.appName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(text = app.packageName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)) {
-                Text(
-                    text = "TERHAPUS",
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.error
-                )
-            }
-            Spacer(modifier = Modifier.width(6.dp))
-            Icon(
-                imageVector = Icons.Default.ChevronRight,
+            Image(
+                bitmap = customBgBitmap!!,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                modifier = Modifier.size(20.dp)
+                modifier = bgModifier,
+                contentScale = ContentScale.Crop
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        if (isGlass) Color(0x66080810)
+                        else if (themeMode == "DARK") Color.Black.copy(alpha = 0.65f)
+                        else Color.White.copy(alpha = 0.65f)
+                    )
+            )
+        } else if (isGlass) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color(0xFF181825),
+                                Color(0xFF0F0F17)
+                            )
+                        )
+                    )
             )
         }
-    }
-}
 
-private fun changePackageState(
-    context: Context,
-    packageName: String,
-    accessMethod: AccessMethod,
-    enable: Boolean,
-    onResult: (Boolean) -> Unit
-) {
-    Thread {
-        var success = false
-        var output = ""
-        var error = ""
-        val actionCommand = if (enable) "enable" else "disable-user"
-        val fullCommand = "pm $actionCommand --user 0 $packageName"
+        // Tampilan Utama UI Aplikasi
+        Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
+            
+            // Header Atas
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (selectionMode) {
+                    IconButton(onClick = { selectionMode = false; selectedPackages = emptySet() }) {
+                        Icon(imageVector = Icons.Default.ArrowBack, contentDescription = "Batal memilih")
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Pilih Aplikasi",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "${selectedPackages.size} dipilih",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    TextButton(
+                        onClick = {
+                            selectedPackages = if (allVisibleSelected) {
+                                selectedPackages - filteredInstalledApps.map { it.packageName }.toSet()
+                            } else {
+                                selectedPackages + filteredInstalledApps.map { it.packageName }.toSet()
+                            }
+                        }
+                    ) {
+                        Text(text = if (allVisibleSelected) "Batal" else "Semua")
+                    }
+                } else {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = if (showDisabledApps) "Aplikasi Nonaktif" else "Aplikasi",
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = if (showDisabledApps) "Total: ${disabledApps.size + deletedApps.size}" 
+                                   else "Aktif: ${activeApps.size}  •  Pengguna: ${activeApps.count { !it.isSystemApp }}  •  Sistem: ${activeApps.count { it.isSystemApp }}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
 
-        try {
-            when (accessMethod) {
-                AccessMethod.ADB -> {
-                    if (!Shizuku.pingBinder()) {
-                        error = "Shizuku tidak aktif"
-                    } else if (Shizuku.checkSelfPermission() != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                        error = "Izin Shizuku belum diberikan"
-                    } else {
-                        val shizukuClass = Class.forName("rikka.shizuku.Shizuku")
-                        val newProcessMethod = shizukuClass.getDeclaredMethod("newProcess", Array<String>::class.java, Array<String>::class.java, String::class.java)
-                        newProcessMethod.isAccessible = true
-                        val process = newProcessMethod.invoke(null, arrayOf("sh", "-c", fullCommand), null, null) as rikka.shizuku.ShizukuRemoteProcess
-                        output = process.inputStream.bufferedReader().use { it.readText() }
-                        error = process.errorStream.bufferedReader().use { it.readText() }
-                        process.waitFor()
-                        success = process.exitValue() == 0
-                        process.destroy()
+                    IconButton(onClick = { selectionMode = true; selectedPackages = emptySet() }) {
+                        Icon(imageVector = Icons.Default.Checklist, contentDescription = "Mode Tandai")
+                    }
+
+                    Box {
+                        IconButton(onClick = { showSettings = true }) {
+                            Icon(imageVector = Icons.Default.Settings, contentDescription = "Pengaturan")
+                        }
+
+                        DropdownMenu(
+                            expanded = showSettings,
+                            onDismissRequest = { showSettings = false },
+                            modifier = Modifier
+                                .width(230.dp)
+                                .then(
+                                    if (isGlass) {
+                                        Modifier
+                                            .background(
+                                                Brush.verticalGradient(
+                                                    colors = listOf(Color(0xF02A2A3C), Color(0xF0181826))
+                                                ),
+                                                RoundedCornerShape(20.dp)
+                                            )
+                                            .border(glassRimBorder, RoundedCornerShape(20.dp))
+                                    } else Modifier
+                                ),
+                            containerColor = if (isGlass) Color.Transparent else MaterialTheme.colorScheme.surfaceContainer
+                        ) {
+                            DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Text("Ubah metode akses", style = MaterialTheme.typography.bodyLarge)
+                                        Text("Saat ini: ${accessMethod.name}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                },
+                                onClick = {
+                                    showSettings = false
+                                    onSettingsClick()
+                                }
+                            )
+                            HorizontalDivider(thickness = 0.5.dp, color = if (isGlass) Color.White.copy(alpha = 0.2f) else MaterialTheme.colorScheme.outlineVariant)
+                            DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Text("Tema Tampilan", style = MaterialTheme.typography.bodyLarge)
+                                        Text(
+                                            text = when (themeMode) {
+                                                "GLASS" -> "Liquid Glass ✨"
+                                                "DARK" -> "Tampilan Gelap"
+                                                else -> "Tampilan Terang"
+                                            },
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                },
+                                onClick = {
+                                    showSettings = false
+                                    showThemeDialog = true
+                                }
+                            )
+                            HorizontalDivider(thickness = 0.5.dp, color = if (isGlass) Color.White.copy(alpha = 0.2f) else MaterialTheme.colorScheme.outlineVariant)
+                            DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Text("Tentang Purify", style = MaterialTheme.typography.bodyLarge)
+                                        Text("Informasi aplikasi & lisensi", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                },
+                                onClick = {
+                                    showSettings = false
+                                    showAboutDialog = true
+                                }
+                            )
+                        }
                     }
                 }
-                AccessMethod.ROOT -> {
-                    val process = Runtime.getRuntime().exec(arrayOf("su", "-c", fullCommand))
-                    output = process.inputStream.bufferedReader().use { it.readText() }
-                    error = process.errorStream.bufferedReader().use { it.readText() }
-                    process.waitFor()
-                    success = process.exitValue() == 0
-                    process.destroy()
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Search Bar Bergaya Kapsul Kaca
+            val searchShape = RoundedCornerShape(28.dp)
+            val searchModifier = if (isGlass) {
+                Modifier
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color(0xFF323248).copy(alpha = (cardAlpha * 1.2f).coerceAtMost(0.9f)),
+                                Color(0xFF1B1B2A).copy(alpha = cardAlpha)
+                            )
+                        ),
+                        searchShape
+                    )
+                    .border(glassRimBorder, searchShape)
+            } else Modifier
+
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+                    .then(searchModifier),
+                shape = searchShape,
+                singleLine = true,
+                placeholder = { Text(text = "Cari nama atau paket aplikasi...", style = MaterialTheme.typography.bodyMedium) },
+                leadingIcon = { Icon(imageVector = Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Icon(imageVector = Icons.Default.Close, contentDescription = "Hapus teks")
+                        }
+                    }
+                },
+                colors = OutlinedTextFieldDefaults.colors(
+                    unfocusedContainerColor = if (isGlass) Color.Transparent else MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.5f),
+                    focusedContainerColor = if (isGlass) Color.Transparent else MaterialTheme.colorScheme.surfaceContainerHigh,
+                    unfocusedBorderColor = Color.Transparent,
+                    focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                )
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Filter Bar
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                FilterChip(
+                    selected = !showDisabledApps,
+                    onClick = { showDisabledApps = false; selectedFilter = "ALL" },
+                    label = { Text("Aktif (${activeApps.size})") }
+                )
+                FilterChip(
+                    selected = showDisabledApps,
+                    onClick = { showDisabledApps = true; selectedFilter = "ALL" },
+                    label = { Text("Nonaktif (${disabledApps.size + deletedApps.size})") }
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                FilterChip(
+                    selected = selectedFilter == "USER",
+                    onClick = { selectedFilter = if (selectedFilter == "USER") "ALL" else "USER" },
+                    label = { Text("Pengguna") }
+                )
+                FilterChip(
+                    selected = selectedFilter == "SYSTEM",
+                    onClick = { selectedFilter = if (selectedFilter == "SYSTEM") "ALL" else "SYSTEM" },
+                    label = { Text("Sistem") }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // List Utama Aplikasi
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = PaddingValues(vertical = 4.dp)
+            ) {
+                items(
+                    items = filteredInstalledApps,
+                    key = { it.packageName },
+                    contentType = { "installed_app" }
+                ) { app ->
+                    AppItem(
+                        app = app,
+                        disabled = !app.isEnabled,
+                        selected = app.packageName in selectedPackages,
+                        selectionMode = selectionMode,
+                        isGlass = isGlass,
+                        cardAlpha = cardAlpha,
+                        glassRimBorder = glassRimBorder,
+                        onClick = {
+                            if (selectionMode) {
+                                selectedPackages = if (app.packageName in selectedPackages) selectedPackages - app.packageName else selectedPackages + app.packageName
+                            } else {
+                                selectedApp = app
+                            }
+                        }
+                    )
+                }
+                if (showDisabledApps) {
+                    items(
+                        items = filteredDeletedApps,
+                        key = { "deleted_" + it.packageName },
+                        contentType = { "deleted_app" }
+                    ) { app ->
+                        DeletedAppItem(
+                            app = app,
+                            isGlass = isGlass,
+                            cardAlpha = cardAlpha,
+                            glassRimBorder = glassRimBorder,
+                            onClick = { selectedDeletedApp = app }
+                        )
+                    }
                 }
             }
-        } catch (exception: Exception) {
-            error = exception.message ?: exception.javaClass.simpleName
-            success = false
-        }
-        Handler(Looper.getMainLooper()).post {
-            val successMessage = if (enable) "Aplikasi berhasil diaktifkan" else "Aplikasi berhasil dinonaktifkan"
-            val failMessage = if (enable) "Gagal mengaktifkan aplikasi" else "Gagal mematikan aplikasi"
-            val message = if (success) successMessage else error.trim().ifEmpty { output.trim() }.ifEmpty { failMessage }
-            Toast.makeText(context, message.take(300), Toast.LENGTH_LONG).show()
-            onResult(success)
-        }
-    }.start()
-}
 
-@Composable
-private fun AppInfoRow(title: String, value: String) {
-    val context = LocalContext.current
-    Row(
-        modifier = Modifier.fillMaxWidth().clickable {
-            val clipboard = context.getSystemService(ClipboardManager::class.java)
-            clipboard?.setPrimaryClip(ClipData.newPlainText(title, value))
-            Toast.makeText(context, "$title disalin", Toast.LENGTH_SHORT).show()
-        }.padding(vertical = 4.dp)
-    ) {
-        Text(text = "$title:", modifier = Modifier.width(110.dp), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
-        Text(text = value, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // Action bar saat selection mode
+            if (selectionMode && !showDisabledApps) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = {
+                            val selectedApps = filteredInstalledApps.filter { it.packageName in selectedPackages }
+                            if (selectedApps.isNotEmpty()) {
+                                PackageManagerAction.disableMultiple(context, selectedApps, accessMethod) { successCount, _ ->
+                                    selectionMode = false
+                                    selectedPackages = emptySet()
+                                    if (successCount == selectedApps.size) {
+                                        selectedApps.forEach { onAppDisabled(it.packageName) }
+                                        displayApps = AppListStorage.loadDisplayApps(context)
+                                    }
+                                }
+                            }
+                        },
+                        enabled = selectedPackages.isNotEmpty(),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(text = "Nonaktifkan (${selectedPackages.size})")
+                    }
+
+                    Button(
+                        onClick = {
+                            val selectedApps = filteredInstalledApps.filter { it.packageName in selectedPackages }
+                            if (selectedApps.isNotEmpty()) {
+                                PackageManagerAction.uninstallMultiple(context, selectedApps, accessMethod) { successCount, _ ->
+                                    selectionMode = false
+                                    selectedPackages = emptySet()
+                                    if (successCount == selectedApps.size) {
+                                        selectedApps.forEach { onAppUninstalled(it.packageName) }
+                                        displayApps = AppListStorage.loadDisplayApps(context)
+                                    }
+                                }
+                            }
+                        },
+                        enabled = selectedPackages.isNotEmpty(),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(text = "Hapus (${selectedPackages.size})")
+                    }
+                }
+            }
+        }
     }
-}
 
-private fun formatFileSize(size: Long): String {
-    if (size < 1024L) return "$size B"
-    val kb = size / 1024.0
-    if (kb < 1024.0) return String.format(Locale.US, "%.1f KB", kb)
-    val mb = kb / 1024.0
-    if (mb < 1024.0) return String.format(Locale.US, "%.1f MB", mb)
-    val gb = mb / 1024.0
-    return String.format(Locale.US, "%.2f GB", gb)
+    // Dialog Pengaturan Tema
+    if (showThemeDialog) {
+        ThemeSettingsDialog(
+            themeMode = themeMode,
+            isGlass = isGlass,
+            bgBlurDp = bgBlurDp,
+            onBgBlurChange = {
+                bgBlurDp = it
+                prefs.edit().putFloat("glass_bg_blur", it).apply()
+            },
+            cardAlpha = cardAlpha,
+            onCardAlphaChange = {
+                cardAlpha = it
+                prefs.edit().putFloat("glass_card_alpha", it).apply()
+            },
+            hasCustomBg = customBgBitmap != null,
+            showBgInOtherThemes = showBgInOtherThemes,
+            onShowBgInOtherThemesChange = {
+                showBgInOtherThemes = it
+                prefs.edit().putBoolean("show_bg_in_other_themes", it).apply()
+            },
+            onSelectGalleryImage = { galleryLauncher.launch("image/*") },
+            onRemoveGalleryImage = {
+                try {
+                    val bgFile = File(context.filesDir, "custom_background.jpg")
+                    if (bgFile.exists()) bgFile.delete()
+                    refreshCustomBackground()
+                    Toast.makeText(context, "Gambar latar dihapus", Toast.LENGTH_SHORT).show()
+                } catch (_: Exception) {}
+            },
+            onThemeChanged = onThemeChanged,
+            onDismiss = { showThemeDialog = false },
+            dialogContainerColor = dialogContainerColor,
+            dialogGlassBorder = dialogGlassBorder
+        )
+    }
+
+    // Dialog Tentang Purify
+    if (showAboutDialog) {
+        AboutDialog(
+            appVersionName = appVersionName,
+            onDismiss = { showAboutDialog = false },
+            dialogContainerColor = dialogContainerColor,
+            dialogGlassBorder = dialogGlassBorder
+        )
+    }
+
+    // Detail Pop-up Aplikasi Terpasang
+    selectedApp?.let { app ->
+        AppDetailDialog(
+            app = app,
+            allApps = apps,
+            accessMethod = accessMethod,
+            isGlass = isGlass,
+            glassRimBorder = glassRimBorder,
+            onDismiss = { selectedApp = null },
+            onAppDisabled = onAppDisabled,
+            onAppUninstalled = onAppUninstalled,
+            onAppListStorageUpdate = { displayApps = AppListStorage.loadDisplayApps(context) }
+        )
+    }
+
+    // Detail Pop-up Aplikasi Terhapus
+    selectedDeletedApp?.let { app ->
+        DeletedAppDetailDialog(
+            app = app,
+            accessMethod = accessMethod,
+            isGlass = isGlass,
+            glassRimBorder = glassRimBorder,
+            onDismiss = { selectedDeletedApp = null },
+            onAppRestored = {
+                selectedDeletedApp = null
+                onAppRestored()
+            }
+        )
+    }
 }

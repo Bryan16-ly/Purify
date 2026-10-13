@@ -68,25 +68,26 @@ class MainActivity : ComponentActivity() {
     var usageAccessGranted by mutableStateOf(false)
         private set
 
-    var darkTheme by mutableStateOf(false)
+    var themeMode by mutableStateOf("DARK")
         private set
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         usageAccessGranted = hasUsageAccess(this)
         val prefs = getSharedPreferences("purify_preferences", Context.MODE_PRIVATE)
-        darkTheme = prefs.getBoolean("dark_theme", false)
+        themeMode = prefs.getString("theme_mode", "DARK") ?: "DARK"
 
         setContent {
+            val isDark = themeMode == "DARK" || themeMode == "GLASS"
             MaterialTheme(
-                colorScheme = if (darkTheme) darkColorScheme() else lightColorScheme()
+                colorScheme = if (isDark) darkColorScheme() else lightColorScheme()
             ) {
                 PurifyApp(
                     usageAccessGranted = usageAccessGranted,
-                    darkTheme = darkTheme,
-                    onThemeChanged = { enabled ->
-                        darkTheme = enabled
-                        prefs.edit().putBoolean("dark_theme", enabled).apply()
+                    themeMode = themeMode,
+                    onThemeChanged = { newTheme ->
+                        themeMode = newTheme
+                        prefs.edit().putString("theme_mode", newTheme).apply()
                     }
                 )
             }
@@ -102,8 +103,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun PurifyApp(
     usageAccessGranted: Boolean,
-    darkTheme: Boolean,
-    onThemeChanged: (Boolean) -> Unit
+    themeMode: String,
+    onThemeChanged: (String) -> Unit
 ) {
     val context = LocalContext.current
     val preferences = remember { context.getSharedPreferences("purify_preferences", Context.MODE_PRIVATE) }
@@ -290,7 +291,7 @@ fun PurifyApp(
                 AppListScreen(
                     apps = apps,
                     accessMethod = currentMethod,
-                    darkTheme = darkTheme,
+                    themeMode = themeMode,
                     onThemeChanged = onThemeChanged,
                     onAppDisabled = { packageName -> updateAppDisabled(packageName) },
                     onAppUninstalled = { packageName -> removeAppLocally(packageName) },
