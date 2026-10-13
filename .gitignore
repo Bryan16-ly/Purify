@@ -23,3 +23,8 @@ local.properties
 # OS files
 .DS_Store
 Thumbs.db
+
+# Release signing secrets
+*.jks
+*.keystore
+keystore.properties

@@ -1,7 +1,17 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+}
+
+// 1. Baca file keystore.properties dari root project
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
 android {
@@ -16,9 +26,39 @@ android {
         versionName = "1.0"
     }
 
+    // --- TAMBAHIN BLOK INI BUAT UBAH NAMA APK ---
+    applicationVariants.all {
+        outputs.all {
+            val output = this as? com.android.build.gradle.internal.api.BaseVariantOutputImpl
+            // Bikin nama file jadi purify.apk
+            output?.outputFileName = "purify-v${defaultConfig.versionName}.apk"
+            
+            // Atau kalau mau ada versi aplikasi (misal: purify-v1.0.apk), pakenya baris ini:
+            // output?.outputFileName = "purify-v${defaultConfig.versionName}.apk"
+        }
+    }
+    
+    // 2. Setup konfigurasi signing rilis
+    signingConfigs {
+        create("release") {
+            if (keystorePropertiesFile.exists()) {
+                keyAlias = keystoreProperties["keyAlias"] as String
+                keyPassword = keystoreProperties["keyPassword"] as String
+                storeFile = rootProject.file(keystoreProperties["storeFile"] as String)
+                storePassword = keystoreProperties["storePassword"] as String
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            // 3. Hubungkan signingConfig ke build rilis
+            signingConfig = signingConfigs.getByName("release")
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
 
