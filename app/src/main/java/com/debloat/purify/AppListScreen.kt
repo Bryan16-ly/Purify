@@ -208,7 +208,6 @@ fun AppListScreen(
     val dialogContainerColor = if (isGlass) Color(0xF2161622) else MaterialTheme.colorScheme.surfaceContainerHigh
     val dialogGlassBorder = if (isGlass) glassRimBorder else null
 
-    // Kondisi kapan wallpaper galeri ditampilkan (Secara default HANYA di mode Liquid Glass)
     val shouldShowCustomBg = customBgBitmap != null && (isGlass || showBgInOtherThemes)
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -504,24 +503,27 @@ fun AppListScreen(
             if (selectionMode && !showDisabledApps) {
                 Spacer(modifier = Modifier.height(10.dp))
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        onClick = {
-                            val selectedApps = filteredInstalledApps.filter { it.packageName in selectedPackages }
-                            if (selectedApps.isNotEmpty()) {
-                                PackageManagerAction.disableMultiple(context, selectedApps, accessMethod) { successCount, _ ->
-                                    selectionMode = false
-                                    selectedPackages = emptySet()
-                                    if (successCount == selectedApps.size) {
-                                        selectedApps.forEach { onAppDisabled(it.packageName) }
-                                        displayApps = AppListStorage.loadDisplayApps(context)
+                    // Tombol penonaktifkan massal HANYA ada di mode ROOT
+                    if (accessMethod == AccessMethod.ROOT) {
+                        Button(
+                            onClick = {
+                                val selectedApps = filteredInstalledApps.filter { it.packageName in selectedPackages }
+                                if (selectedApps.isNotEmpty()) {
+                                    PackageManagerAction.disableMultiple(context, selectedApps, accessMethod) { successCount, _ ->
+                                        selectionMode = false
+                                        selectedPackages = emptySet()
+                                        if (successCount == selectedApps.size) {
+                                            selectedApps.forEach { onAppDisabled(it.packageName) }
+                                            displayApps = AppListStorage.loadDisplayApps(context)
+                                        }
                                     }
                                 }
-                            }
-                        },
-                        enabled = selectedPackages.isNotEmpty(),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text(text = "Nonaktifkan (${selectedPackages.size})")
+                            },
+                            enabled = selectedPackages.isNotEmpty(),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(text = "Nonaktifkan (${selectedPackages.size})")
+                        }
                     }
 
                     Button(
@@ -539,7 +541,8 @@ fun AppListScreen(
                             }
                         },
                         enabled = selectedPackages.isNotEmpty(),
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                     ) {
                         Text(text = "Hapus (${selectedPackages.size})")
                     }

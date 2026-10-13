@@ -146,24 +146,41 @@ fun PurifyApp(
         AppListStorage.saveApps(context = context, apps = apps)
     }
 
-    // Deteksi pencabutan izin saat user kembali ke Purify (ON_RESUME)
+    // Deteksi status Shizuku / Root saat user kembali ke Purify (ON_RESUME)
     DisposableEffect(lifecycleOwner, selectedMethod) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME && selectedMethod != null) {
                 coroutineScope.launch(Dispatchers.IO) {
-                    val stillHasAccess = when (selectedMethod) {
-                        AccessMethod.ADB -> {
-                            try { ShizukuManager.isRunning() && ShizukuManager.hasPermission() } catch (_: Exception) { false }
-                        }
-                        AccessMethod.ROOT -> {
-                            checkRootAccess()
-                        }
-                        else -> true
-                    }
-                    if (!stillHasAccess) {
+                    if (selectedMethod == AccessMethod.ADB) {
+                        val isRunning = try { ShizukuManager.isRunning() } catch (_: Exception) { false }
+                        val hasPerm = try { ShizukuManager.hasPermission() } catch (_: Exception) { false }
+
                         withContext(Dispatchers.Main) {
-                            showShizukuDialog = false
-                            lostAccessMethod = selectedMethod
+                            if (!isRunning) {
+                                showShizukuDialog = false
+                                lostAccessMethod = AccessMethod.ADB
+                            } else if (!hasPerm) {
+                                // Shizuku berjalan tapi belum diizinkan -> Minta izin secara eksplisit
+                                shizukuPermissionGranted = false
+                                shizukuDialogMessage = "Purify membutuhkan izin Shizuku untuk mengakses ADB. Silakan berikan izin melalui pop-up Shizuku."
+                                showShizukuDialog = true
+                                lostAccessMethod = null
+                                try { ShizukuManager.requestPermission() } catch (_: Exception) {}
+                            } else {
+                                shizukuPermissionGranted = true
+                                showShizukuDialog = false
+                                lostAccessMethod = null
+                            }
+                        }
+                    } else if (selectedMethod == AccessMethod.ROOT) {
+                        val hasRoot = checkRootAccess()
+                        withContext(Dispatchers.Main) {
+                            if (!hasRoot) {
+                                showShizukuDialog = false
+                                lostAccessMethod = AccessMethod.ROOT
+                            } else {
+                                lostAccessMethod = null
+                            }
                         }
                     }
                 }
@@ -180,6 +197,7 @@ fun PurifyApp(
                     shizukuPermissionGranted = true
                     showShizukuDialog = false
                     lostAccessMethod = null
+                    restoreRefreshKey++
                 } else {
                     shizukuPermissionGranted = false
                     shizukuDialogMessage = "Izin Shizuku ditolak. Purify tidak dapat menggunakan akses ADB."
@@ -189,10 +207,16 @@ fun PurifyApp(
         }
 
         val binderReceivedListener = Shizuku.OnBinderReceivedListener {
-            shizukuPermissionGranted = try { ShizukuManager.hasPermission() } catch (_: Throwable) { false }
-            if (currentSelectedMethod == AccessMethod.ADB && shizukuPermissionGranted) {
-                showShizukuDialog = false
-                lostAccessMethod = null
+            val hasPerm = try { ShizukuManager.hasPermission() } catch (_: Throwable) { false }
+            shizukuPermissionGranted = hasPerm
+            if (currentSelectedMethod == AccessMethod.ADB) {
+                if (hasPerm) {
+                    showShizukuDialog = false
+                    lostAccessMethod = null
+                    restoreRefreshKey++
+                } else {
+                    try { ShizukuManager.requestPermission() } catch (_: Throwable) {}
+                }
             }
         }
 
@@ -255,9 +279,12 @@ fun PurifyApp(
                 shizukuPermissionGranted = false
                 shizukuDialogMessage = "Purify membutuhkan izin Shizuku untuk menggunakan akses ADB."
                 showShizukuDialog = true
+                try { ShizukuManager.requestPermission() } catch (_: Exception) {}
                 return@LaunchedEffect
             }
             shizukuPermissionGranted = true
+            showShizukuDialog = false
+            lostAccessMethod = null
         }
 
         val cachedApps = withContext(Dispatchers.IO) { AppListStorage.loadApps(context) }
@@ -356,22 +383,24 @@ fun PurifyApp(
         AlertDialog(
             onDismissRequest = { },
             icon = { Icon(imageVector = Icons.Default.Security, contentDescription = null) },
-            title = { Text(text = "Shizuku diperlukan") },
+            title = { Text(text = "Izin Shizuku Diperlukan") },
             text = { Text(text = shizukuDialogMessage) },
             confirmButton = {
                 TextButton(onClick = {
                     if (ShizukuManager.isRunning()) {
-                        if (!ShizukuManager.hasPermission()) ShizukuManager.requestPermission()
-                        else {
+                        if (!ShizukuManager.hasPermission()) {
+                            ShizukuManager.requestPermission()
+                        } else {
                             shizukuPermissionGranted = true
                             showShizukuDialog = false
+                            restoreRefreshKey++
                         }
                     } else {
                         try {
                             context.startActivity(context.packageManager.getLaunchIntentForPackage("moe.shizuku.privileged.api") ?: Intent(Settings.ACTION_SETTINGS))
                         } catch (_: Exception) { context.startActivity(Intent(Settings.ACTION_SETTINGS)) }
                     }
-                }) { Text(text = if (ShizukuManager.isRunning()) "Izinkan" else "Buka Shizuku") }
+                }) { Text(text = if (ShizukuManager.isRunning()) "Minta Izin" else "Buka Shizuku") }
             },
             dismissButton = {
                 TextButton(onClick = { showShizukuDialog = false; selectedMethod = null }) { Text(text = "Batal") }

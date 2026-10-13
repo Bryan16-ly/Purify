@@ -171,28 +171,33 @@ fun AppDetailDialog(
                         Text("Tutup")
                     }
                     Spacer(modifier = Modifier.width(8.dp))
-                    Button(
-                        onClick = {
-                            val isEnabling = !app.isEnabled
-                            changePackageState(context, app.packageName, accessMethod, isEnabling) { success ->
-                                if (success) {
-                                    onDismiss()
-                                    if (isEnabling) {
-                                        val updatedApps = allApps.map { if (it.packageName == app.packageName) it.copy(isEnabled = true) else it }
-                                        AppListStorage.saveApps(context, updatedApps)
-                                    } else {
-                                        onAppDisabled(app.packageName)
-                                        val updatedApps = allApps.map { if (it.packageName == app.packageName) it.copy(isEnabled = false) else it }
-                                        AppListStorage.saveApps(context, updatedApps)
+
+                    // Opsi Nonaktifkan/Aktifkan HANYA tersedia jika menggunakan akses ROOT
+                    if (accessMethod == AccessMethod.ROOT) {
+                        Button(
+                            onClick = {
+                                val isEnabling = !app.isEnabled
+                                changePackageState(context, app.packageName, accessMethod, isEnabling) { success ->
+                                    if (success) {
+                                        onDismiss()
+                                        if (isEnabling) {
+                                            val updatedApps = allApps.map { if (it.packageName == app.packageName) it.copy(isEnabled = true) else it }
+                                            AppListStorage.saveApps(context, updatedApps)
+                                        } else {
+                                            onAppDisabled(app.packageName)
+                                            val updatedApps = allApps.map { if (it.packageName == app.packageName) it.copy(isEnabled = false) else it }
+                                            AppListStorage.saveApps(context, updatedApps)
+                                        }
+                                        onAppListStorageUpdate()
                                     }
-                                    onAppListStorageUpdate()
                                 }
                             }
+                        ) {
+                            Text(text = if (app.isEnabled) "Nonaktifkan" else "Aktifkan")
                         }
-                    ) {
-                        Text(text = if (app.isEnabled) "Nonaktifkan" else "Aktifkan")
+                        Spacer(modifier = Modifier.width(6.dp))
                     }
-                    Spacer(modifier = Modifier.width(6.dp))
+
                     Button(
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                         onClick = {
@@ -344,30 +349,20 @@ fun changePackageState(
         var success = false
         var output = ""
         var error = ""
-        val actionCommand = if (enable) "enable" else "disable-user"
-        val fullCommand = "pm $actionCommand --user 0 $packageName"
 
         try {
             when (accessMethod) {
                 AccessMethod.ADB -> {
-                    if (!Shizuku.pingBinder()) {
-                        error = "Shizuku tidak aktif"
-                    } else if (Shizuku.checkSelfPermission() != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                        error = "Izin Shizuku belum diberikan"
-                    } else {
-                        val shizukuClass = Class.forName("rikka.shizuku.Shizuku")
-                        val newProcessMethod = shizukuClass.getDeclaredMethod("newProcess", Array<String>::class.java, Array<String>::class.java, String::class.java)
-                        newProcessMethod.isAccessible = true
-                        val process = newProcessMethod.invoke(null, arrayOf("sh", "-c", fullCommand), null, null) as rikka.shizuku.ShizukuRemoteProcess
-                        output = process.inputStream.bufferedReader().use { it.readText() }
-                        error = process.errorStream.bufferedReader().use { it.readText() }
-                        process.waitFor()
-                        success = process.exitValue() == 0
-                        process.destroy()
-                    }
+                    error = "Penonaktifan aplikasi tidak didukung dalam mode ADB."
+                    success = false
                 }
                 AccessMethod.ROOT -> {
-                    val process = Runtime.getRuntime().exec(arrayOf("su", "-c", fullCommand))
+                    val rootCmd = if (enable) {
+                        "pm enable --user 0 $packageName; cmd package unsuspend --user 0 $packageName"
+                    } else {
+                        "pm disable-user --user 0 $packageName"
+                    }
+                    val process = Runtime.getRuntime().exec(arrayOf("su", "-c", rootCmd))
                     output = process.inputStream.bufferedReader().use { it.readText() }
                     error = process.errorStream.bufferedReader().use { it.readText() }
                     process.waitFor()
@@ -379,8 +374,9 @@ fun changePackageState(
             error = exception.message ?: exception.javaClass.simpleName
             success = false
         }
+
         Handler(Looper.getMainLooper()).post {
-            val successMessage = if (enable) "Aplikasi berhasil diaktifkan" else "Aplikasi berhasil dinonaktifkan"
+            val successMessage = if (enable) "Aplikasi berhasil diaktifkan kembali" else "Aplikasi berhasil dinonaktifkan"
             val failMessage = if (enable) "Gagal mengaktifkan aplikasi" else "Gagal mematikan aplikasi"
             val message = if (success) successMessage else error.trim().ifEmpty { output.trim() }.ifEmpty { failMessage }
             Toast.makeText(context, message.take(300), Toast.LENGTH_LONG).show()
