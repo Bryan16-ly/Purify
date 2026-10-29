@@ -38,6 +38,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import java.io.File
 
@@ -293,9 +294,11 @@ fun AppListScreen(
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = if (showDisabledApps) "Total: ${disabledApps.size + deletedApps.size}" 
-                                   else "Aktif: ${activeApps.size}  •  Pengguna: ${activeApps.count { !it.isSystemApp }}  •  Sistem: ${activeApps.count { it.isSystemApp }}",
+                                   else "Aktif: ${activeApps.size} • Pengguna: ${activeApps.count { !it.isSystemApp }} • Sistem: ${activeApps.count { it.isSystemApp }}",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
 
@@ -361,7 +364,7 @@ fun AppListScreen(
                                         Text("Tema Tampilan", style = MaterialTheme.typography.bodyLarge)
                                         Text(
                                             text = when (themeMode) {
-                                                "GLASS" -> "Liquid Glass ✨"
+                                                "GLASS" -> "Liquid Glass"
                                                 "DARK" -> "Tampilan Gelap"
                                                 else -> "Tampilan Terang"
                                             },
@@ -439,32 +442,66 @@ fun AppListScreen(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Filter Bar
+            // Filter Bar Adaptif 1 Baris (Proporsional Menyesuaikan Ukuran Layar / DPI)
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 FilterChip(
                     selected = !showDisabledApps,
                     onClick = { showDisabledApps = false; selectedFilter = "ALL" },
-                    label = { Text("Aktif (${activeApps.size})") }
+                    label = {
+                        Text(
+                            text = "Aktif",
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    },
+                    modifier = Modifier.weight(1f)
                 )
                 FilterChip(
                     selected = showDisabledApps,
                     onClick = { showDisabledApps = true; selectedFilter = "ALL" },
-                    label = { Text("Nonaktif (${disabledApps.size + deletedApps.size})") }
+                    label = {
+                        Text(
+                            text = "Nonaktif",
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    },
+                    modifier = Modifier.weight(1f)
                 )
-                Spacer(modifier = Modifier.weight(1f))
+                
+                Spacer(modifier = Modifier.width(8.dp))
+                
                 FilterChip(
                     selected = selectedFilter == "USER",
                     onClick = { selectedFilter = if (selectedFilter == "USER") "ALL" else "USER" },
-                    label = { Text("Pengguna") }
+                    label = {
+                        Text(
+                            text = "Pengguna",
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    },
+                    modifier = Modifier.weight(1f)
                 )
                 FilterChip(
                     selected = selectedFilter == "SYSTEM",
                     onClick = { selectedFilter = if (selectedFilter == "SYSTEM") "ALL" else "SYSTEM" },
-                    label = { Text("Sistem") }
+                    label = {
+                        Text(
+                            text = "Sistem",
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    },
+                    modifier = Modifier.weight(1f)
                 )
             }
 
